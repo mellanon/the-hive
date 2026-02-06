@@ -119,11 +119,14 @@ The gap: these components work standalone but lack a **protocol specification** 
 
 ## Contributing
 
-This is an early-stage protocol specification. We welcome contributions from operators, builders, and thinkers.
+Contributions to The Hive are coordinated through [pai-collab](https://github.com/mellanon/pai-collab) — our first hive ("Hive Zero"). We use it to dogfood our own protocol: work items, reviews, trust, and governance all run through the same system we're building.
 
-- Open an issue to discuss protocol design
-- Submit a PR to propose spec changes
-- See [pai-collab](https://github.com/mellanon/pai-collab) for contribution SOPs and governance
+**To contribute:**
+1. Join [pai-collab](https://github.com/mellanon/pai-collab) and follow the onboarding SOP
+2. Pick up a work item or open an issue to propose protocol changes
+3. Submit your work via fork-and-PR, reviewed under pai-collab's governance model
+
+This means every contribution to The Hive is itself a test of the protocol — building the thing by using the thing.
 
 ## License
 
