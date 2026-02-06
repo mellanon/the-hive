@@ -103,6 +103,7 @@ Concrete walkthroughs of how The Hive works in practice:
 - [A swarm forms around work](scenarios/swarm-forms-on-work.md)
 - [Trust builds over time](scenarios/trust-builds-over-time.md)
 - [A skill is published to the network](scenarios/skill-published.md)
+- [The operator experience](scenarios/operator-experience.md) — what the operator actually sees
 
 ## Current State
 
