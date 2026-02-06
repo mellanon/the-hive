@@ -21,12 +21,13 @@ A managed collaboration space where work happens. Each hive has:
 
 ## Hive Types
 
-| Type | Membership | Lifespan | Example |
-|------|-----------|----------|---------|
-| **Open** | Anyone | Permanent | Community tools hive |
-| **Closed** | Invite-only | Permanent | Private team workspace |
-| **Ephemeral** | Scoped | Task duration | A bounty or sprint |
-| **Federated** | Cross-hive | Varies | Multi-community initiative |
+| Type | Membership | Lifespan | Identity | Example |
+|------|-----------|----------|----------|---------|
+| **Open** | Anyone | Permanent | GitHub, Google, social | Community tools hive |
+| **Closed** | Invite-only | Permanent | GitHub + application | Private team workspace |
+| **Enterprise** | Corporate | Permanent | SSO (Okta, Azure AD) | Company-internal hive |
+| **Ephemeral** | Scoped | Task duration | Inherited from parent | A bounty or sprint |
+| **Federated** | Cross-hive | Varies | Any (per-hive policy) | Multi-community initiative |
 
 ## hive.yaml (Hive Manifest)
 
@@ -44,6 +45,19 @@ governance:
     - <path to SOP>
 membership:
   join: open | application | invite
+  identity:                             # see Operator Identity protocol
+    required:                           # operator must have at least one of these
+      - github
+    accepted:                           # all providers this hive recognizes
+      - github
+      - google
+      - facebook
+      - apple
+    enterprise:                         # for closed/enterprise hives (optional)
+      provider: <saml | oidc>
+      tenant: <tenant-id>
+      domain: <corporate-domain>
+      sso_url: <SSO endpoint>
   roles:
     - contributor
     - reviewer

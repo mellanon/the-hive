@@ -16,9 +16,85 @@ A human who directs AI agents to produce work. The operator is always at the cen
 An operator's identity includes:
 
 - **Who they are** — verified identity (not anonymous)
-- **What they can do** — skills, domain expertise, agent capabilities
+- **What they can do** — skills, domain expertise
 - **What they've done** — trust score from verified contributions
 - **Who they've worked with** — swarm history, hive membership
+
+## Identity Provider Model
+
+The protocol separates **identity verification** (proving who you are) from **identity representation** (how the network refers to you). This allows multiple identity providers to plug in without changing the protocol.
+
+### Identity Providers
+
+| Provider Type | Protocol | Examples | Hive Type |
+|--------------|----------|----------|-----------|
+| **Git-based** | SSH key / token auth | GitHub, GitLab, Codeberg | Open / community hives |
+| **Social OAuth** | OAuth 2.0 / OIDC | Google, Facebook, Apple, X | Public hives, broad adoption |
+| **Enterprise SSO** | SAML 2.0 / OIDC | Okta, Azure AD, Google Workspace, Auth0 | Closed / enterprise hives |
+| **Cryptographic** | PGP / DID | PGP keyservers, DID methods | High-assurance, self-sovereign |
+
+### How It Works
+
+```
+┌──────────────────────────────────────────────────────┐
+│  OPERATOR PROFILE (operator.yaml)                    │
+│                                                      │
+│  handle: "andreas"                                   │
+│  identities:                                         │
+│    - provider: github                                │
+│      id: "mellanon"           ← Git-based            │
+│    - provider: google                                │
+│      id: "andreas@..."        ← Social OAuth         │
+│    - provider: azure_ad                              │
+│      id: "astrom@corp.com"    ← Enterprise SSO       │
+│                                                      │
+│  Each identity is a CLAIM. Verification is per-hive. │
+└──────────────────────────────────────────────────────┘
+```
+
+**Key design principle:** An operator has ONE profile with MULTIPLE linked identities. The `handle` is the canonical network identifier. Identity providers are how they prove they own that handle in different contexts.
+
+### Hive Identity Requirements
+
+Each hive declares what identity providers it accepts in `hive.yaml`:
+
+```yaml
+# hive.yaml
+membership:
+  join: open | application | invite
+  identity:
+    required:
+      - github                          # must have at least one of these
+    accepted:
+      - github
+      - google
+      - facebook
+      - apple
+    enterprise:                         # for closed/enterprise hives
+      provider: azure_ad               # SAML/OIDC provider
+      tenant: <tenant-id>             # corporate tenant
+      domain: corp.com                 # required email domain
+      sso_url: <SSO endpoint>         # provider URL
+```
+
+This lets each hive set its own bar:
+- **Open community hive:** accepts GitHub, Google, Facebook — low friction
+- **Developer hive:** requires GitHub (proof of technical identity)
+- **Enterprise hive:** requires corporate SSO — only employees can join
+
+### Verification Flow
+
+```
+1. Operator creates profile with handle + linked identities
+2. Operator joins a hive
+3. Hive checks: does the operator have an identity matching our requirements?
+4. Provider-specific verification:
+   - GitHub: can push to spoke repo (proof of account control)
+   - Social OAuth: OAuth token exchange (standard OIDC flow)
+   - Enterprise SSO: SAML assertion from corporate IdP
+   - PGP: signed operator.yaml with published public key
+5. Hive records verification: provider, timestamp, evidence
+```
 
 ## Operator Profile Schema
 
@@ -28,14 +104,23 @@ The operator profile is a YAML file (`operator.yaml`) that lives in the operator
 
 ```yaml
 schemaVersion: "1.0"
-handle: <github-handle>
+handle: <canonical-handle>              # network-wide identifier
 name: <display-name>                    # optional
-verified: true
-verification:
-  method: github                        # github | pgp | dns
-  evidence: <github-handle>             # verifiable reference
-  verified_at: <ISO 8601>
-skills:                                 # operator's capabilities (what they bring to a hive)
+identities:
+  - provider: github                    # git-based
+    id: <github-handle>
+    verified: true
+    verified_at: <ISO 8601>
+  - provider: google                    # social OAuth
+    id: <email>
+    verified: true
+    verified_at: <ISO 8601>
+  - provider: azure_ad                  # enterprise SSO
+    id: <corporate-email>
+    verified: true
+    verified_at: <ISO 8601>
+    tenant: <tenant-id>
+skills:                                 # operator's capabilities
   - specflow
   - security-scanning
   - content-filtering
@@ -49,10 +134,11 @@ hives:
   - hive: <org/repo>
     role: contributor | reviewer | maintainer
     trust_zone: untrusted | trusted | maintainer
+    identity_provider: github           # which identity was used to join
     joined: <ISO 8601>
-    contributions: <int>                # count of merged contributions
-    reviews: <int>                      # count of completed reviews
-    swarms: <int>                       # count of completed swarms
+    contributions: <int>
+    reviews: <int>
+    swarms: <int>
 ```
 
 ### Tier 3: Private (local blackboard only, never published)
@@ -66,41 +152,91 @@ active_work:
   - item: <work-id>
     hive: <org/repo>
     status: in_progress
+credentials:                            # NEVER in spoke or hub
+  - provider: azure_ad
+    token: <encrypted>
+  - provider: google
+    token: <encrypted>
+```
+
+## Enterprise SSO Integration
+
+For enterprise hives, SSO provides:
+
+| Capability | How it works |
+|-----------|-------------|
+| **Authentication** | Corporate IdP (Okta, Azure AD, Google Workspace) verifies employee identity |
+| **Authorization** | Hive maps IdP groups/roles to hive roles (contributor, reviewer, maintainer) |
+| **Provisioning** | Auto-join when employee is added to IdP group. Auto-leave on deprovisioning. |
+| **Audit** | SSO events feed into the hive's audit trail (Layer 6 of security boundary) |
+| **Compliance** | Corporate policies enforced at the IdP level (MFA, device trust, geo-restrictions) |
+
+### Enterprise hive.yaml example
+
+```yaml
+schemaVersion: "1.0"
+name: acme-security-tools
+type: closed
+membership:
+  join: invite
+  identity:
+    required:
+      - azure_ad
+    enterprise:
+      provider: azure_ad
+      tenant: "acme-corp-tenant-id"
+      domain: acme.com
+      sso_url: "https://login.microsoftonline.com/acme-corp/saml2"
+      group_mapping:
+        - idp_group: "AI-Operators"
+          hive_role: contributor
+        - idp_group: "AI-Leads"
+          hive_role: reviewer
+        - idp_group: "Platform-Team"
+          hive_role: maintainer
+governance:
+  model: delegated                      # governance delegated to corporate structure
+  maintainers:
+    - <corporate-admin>
+  compliance:
+    audit_export: true                  # enable audit log export for compliance
+    data_residency: eu-west-1           # optional data residency requirement
 ```
 
 ## Design Decisions
 
 ### 1. How is identity verified?
 
-**Decision:** GitHub identity is the primary verification method. PGP and DNS TXT records as alternatives.
+**Decision:** Pluggable identity provider model. The protocol defines the abstraction; hives choose which providers they accept.
 
 **Mechanism:**
-- **GitHub (default):** Operator's GitHub handle IS their identity. Verified by the fact that they can push to their spoke repo (proof of account control). No additional ceremony needed.
-- **PGP (optional):** Operator signs their `operator.yaml` with a PGP key. The key fingerprint is recorded. For operators who want cryptographic identity beyond GitHub.
-- **DNS TXT (optional):** Operator adds a TXT record to a domain they control, referencing their operator handle. For operators with domain-backed identity.
+- **Git-based (GitHub, GitLab):** Proof of account control via push to spoke repo. Default for community hives.
+- **Social OAuth (Google, Facebook, Apple):** Standard OIDC token exchange. Lowers barrier for public hives.
+- **Enterprise SSO (Okta, Azure AD, Google Workspace):** SAML/OIDC assertion from corporate IdP. Required for enterprise hives.
+- **Cryptographic (PGP, DID):** Self-sovereign identity. Operator signs their profile. For high-assurance contexts.
 
-**Rationale:** GitHub is already the coordination platform. Every operator already has an account. Adding verification ceremony on top of GitHub would add friction without adding security for the common case. PGP and DNS are opt-in for operators who need stronger identity guarantees.
+**Rationale:** No single identity provider fits all hive types. An open community hive should accept Google sign-in. An enterprise hive must require corporate SSO. The protocol abstracts the provider so hives choose their identity requirements.
 
 ### 2. How is the operator profile portable across hives?
 
-**Decision:** The `operator.yaml` lives in the spoke (`.collab/`), published alongside the spoke contract. Any hive can read it.
+**Decision:** The `operator.yaml` lives in the spoke (`.collab/`), published alongside the spoke contract. Multiple linked identities enable joining hives with different provider requirements.
 
 **Mechanism:**
-- Tier 1 (public identity) is always visible — any hive can verify who you are
-- Tier 2 (hive-scoped) lists all hive memberships — a new hive can see your history elsewhere
+- Tier 1 (public identity) lists all verified identities — a hive can check if the operator meets its requirements
+- Tier 2 (hive-scoped) records which identity provider was used to join each hive
 - Trust doesn't transfer automatically — it's evidence for the new hive's maintainer to consider
 - The spoke `status.yaml` references the operator profile, so hub aggregation picks it up
 
-**Rationale:** The spoke blackboard is already the projection mechanism. Adding operator identity to it is natural — no new infrastructure needed.
+**Rationale:** One profile, multiple identities, portable across hives. The same operator can be `mellanon` on GitHub, `andreas@gmail.com` on Google, and `astrom@acme.com` on Azure AD — it's all the same person, verified through different channels.
 
 ### 3. How do capabilities relate to the operator profile?
 
-**Decision:** Skills are listed at the operator level, not per-agent. An operator may run multiple agents under different names — that's an implementation detail. The network cares about what the operator can do, not how many agents they run.
+**Decision:** Skills are listed at the operator level. Agents are invisible to the protocol.
 
 **Mechanism:**
 - `skills` array lists the operator's capabilities (references [Skill Protocol](skill-protocol.md) names)
 - `availability` is a single status for the operator (open/busy/offline)
-- Agents are invisible to the protocol — they're local infrastructure, not network identity
+- Agents are local infrastructure — the hive doesn't track them
 
 **Rationale:** An operator might bring one agent or ten. They might rename them, swap platforms, or run different agents for different tasks. The hive doesn't need to track that. It needs to know: what can this operator do, and are they available?
 
@@ -110,14 +246,17 @@ active_work:
 
 | Tier | Visibility | Contents |
 |------|-----------|----------|
-| **Public** | Any hive, any operator | Handle, verification, agent capabilities |
-| **Hive-scoped** | Within joined hives | Trust zone, contribution counts, swarm history |
-| **Private** | Local blackboard only | Token usage, active work details, personal config |
+| **Public** | Any hive, any operator | Handle, verified identities (provider + ID, not tokens), skills |
+| **Hive-scoped** | Within joined hives | Trust zone, contribution counts, swarm history, which provider was used |
+| **Private** | Local blackboard only | Tokens, credentials, active work details |
 
-**Rationale:** Operators should control what's visible. Public identity enables discovery. Hive-scoped data enables trust assessment within a community. Private data stays on the operator's machine — the local blackboard is sovereign.
+**Rationale:** Operators should control what's visible. Public identity enables discovery. Hive-scoped data enables trust assessment within a community. Private data — especially auth credentials — stays on the operator's machine. The local blackboard is sovereign.
 
 ## Prior Art
 
 - pai-collab REGISTRY.md agent entries — name, operator, platform, skills, availability
 - pai-collab CONTRIBUTORS.yaml — trust zone assignments per operator
 - PAI `settings.json` — local identity configuration (name, voice, preferences)
+- OAuth 2.0 / OpenID Connect — industry standard for social and enterprise identity
+- SAML 2.0 — enterprise SSO standard (Okta, Azure AD, Google Workspace)
+- W3C Decentralized Identifiers (DIDs) — self-sovereign identity standard
