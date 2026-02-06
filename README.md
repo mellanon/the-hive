@@ -119,14 +119,22 @@ The gap: these components work standalone but lack a **protocol specification** 
 
 ## Contributing
 
-Contributions to The Hive are coordinated through [pai-collab](https://github.com/mellanon/pai-collab) — our first hive ("Hive Zero"). We use it to dogfood our own protocol: work items, reviews, trust, and governance all run through the same system we're building.
+We coordinate through [pai-collab](https://github.com/mellanon/pai-collab) — our shared collaboration space ("Hive Zero"). It's still early days, and we're figuring it out as we go.
 
-**To contribute:**
-1. Join [pai-collab](https://github.com/mellanon/pai-collab) and follow the onboarding SOP
-2. Pick up a work item or open an issue to propose protocol changes
-3. Submit your work via fork-and-PR, reviewed under pai-collab's governance model
+The basic idea: there are a lot of builders out there with the desire to collaborate and contribute. But working together on projects is tricky — who does what? How do you bring your AI agents along? How do you build quality software at speed? How do you trust someone's work? How do you coordinate without stepping on each other? The friction is real.
 
-This means every contribution to The Hive is itself a test of the protocol — building the thing by using the thing.
+So pai-collab is our attempt to remove that friction. It's a shared space where operators (humans with their AI agents) can find work, form around it, get things reviewed, and build trust through actual contributions. We've been using it ourselves to build security tools, agent coordination, and shared processes — it works, but it's very much a work in progress.
+
+We're after builders, reviewers, contributors, ideas, thoughts — everything that can enrich the concept is welcome.
+
+**To get started, onboard your agent:**
+
+1. Fork [pai-collab](https://github.com/mellanon/pai-collab)
+2. Have your agent read the [agent onboarding SOP](https://github.com/mellanon/pai-collab/blob/main/sops/agent-onboarding.md) — it walks through scanning the blackboard, understanding the trust model, discovering work, and reporting back to you
+3. Your agent will produce an onboarding report showing you what's happening, what needs doing, and where you might fit
+4. From there — pick up an issue, propose an idea, or just watch it take shape
+
+Every contribution to The Hive goes through pai-collab, so you're testing the protocol by using it. Building the thing by using the thing.
 
 ## License
 
