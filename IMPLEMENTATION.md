@@ -340,7 +340,20 @@ The collaboration and reputation layer.
 - Trust scoring
 - Vouching mechanism
 
-### Phase 6: Web Dashboard (Optional)
+### Phase 6: Observability
+
+Extend PAI Signal's observability framework to hive-level events.
+
+**Deliverables:**
+- Hive event types (join, leave, work lifecycle, swarm lifecycle, trust feedback)
+- JSONL event storage per level (local/spoke/hub)
+- Pre-built query scripts (`trust-trends.sh`, `swarm-activity.sh`, `operator-feedback.sh`)
+- `blackboard observe --level hub` command
+- PII scrubbing on all events (from Signal's 17-pattern sanitizer)
+
+**Built from:** PAI Signal's event library (TypeScript types, factory functions, JSONL logging, PII scrubbing). Same three-layer model: CLI queries (Layer 0) → scripts (Layer 1) → Grafana dashboard (Layer 2).
+
+### Phase 7: Web Dashboard (Optional)
 
 Extend `blackboard serve` to spoke and hub levels.
 

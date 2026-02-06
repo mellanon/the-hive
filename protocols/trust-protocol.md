@@ -150,24 +150,175 @@ trust:
 - **Closed hive:** vouching required (`required_for_join: true`) — the Direct Connect model
 - **Enterprise hive:** vouching typically disabled (SSO group membership replaces it)
 
-## Dimension 4: Trust Scoring (Planned)
+## Dimension 4: Trust Scoring (Designed)
 
-Quantitative trust that compounds over time and is portable across hives.
+Quantitative trust that compounds over time and is portable across hives. Modeled after marketplace seller ratings (TradeMe, eBay) and professional network endorsements (LinkedIn) — but backed by verified work, not self-reported skills.
 
-### Open Questions
+### The Feedback Model
 
-1. How is trust scored quantitatively? (Contribution count? Review quality? Swarm success rate?)
-2. What events build trust? (Code merged? Review completed? Swarm delivered? Vouching record?)
-3. What events reduce trust? (Abandoned work? Failed reviews? Timeout? Vouched operator misconduct?)
-4. How is trust verified by third parties? (Cryptographic signatures? Public ledger?)
+Every completed interaction generates a feedback event: **positive**, **neutral**, or **negative**. The breakdown is visible on the operator's profile — anyone can see their track record.
 
-### Design Considerations
+```
+┌─────────────────────────────────────────────────────┐
+│  @andreas · security-tools hive                      │
+│                                                      │
+│  ✅ Positive: 37    ⬜ Neutral: 4    ❌ Negative: 1 │
+│  ████████████████████████████░░░░░                    │
+│  Trust zone: Trusted · Member since 2026-01            │
+│                                                      │
+│  Recent feedback:                                    │
+│  ✅ "Clean implementation, thorough tests" — @jordan │
+│  ✅ "Excellent threat model" — @sam                  │
+│  ⬜ "Good work, needed revision on edge cases" — @kim│
+└─────────────────────────────────────────────────────┘
+```
 
-- Trust scoring must build on the security infrastructure (Dimensions 1-2) and vouching (Dimension 3), not replace them
-- Vouching history is a trust signal — operators who vouch well (their vouchees succeed) build reputation; operators who vouch poorly lose credibility
-- Scores should be derived from auditable events — the same audit trail that powers security
-- ivy-blackboard's event log and pai-content-filter's audit trail are the raw data sources
-- The spoke contract (`.collab/status.yaml`) is the projection mechanism for trust data to the hub
+### What Generates Feedback
+
+| Event | Rating | Who Rates | Mechanism |
+|-------|--------|-----------|-----------|
+| **PR merged (first attempt)** | Positive | Reviewer + maintainer | PR merged with approval, no revision cycles |
+| **PR merged (after revisions)** | Neutral | Reviewer | PR required changes but ultimately merged |
+| **PR rejected** | Negative | Reviewer + maintainer | PR closed without merge (quality/security/relevance) |
+| **Review given (helpful)** | Positive | PR author | Author marks review as helpful |
+| **Review given (unhelpful)** | Neutral | PR author | Author marks review as unhelpful or not actionable |
+| **Swarm completed (on time)** | Positive | Swarm peers | Swarm delivered, operator met their role commitments |
+| **Swarm completed (operator lagged)** | Neutral | Swarm peers | Swarm delivered but this operator caused delays |
+| **Work abandoned** | Negative | Maintainer | Operator claimed work and didn't deliver within deadline |
+| **Security violation** | Negative | Automated | Secret leak detected, content filter triggered on submitted code |
+| **Vouch successful** | Positive | System | Vouched operator earns 5+ positive ratings (voucher rewarded) |
+| **Vouch failed** | Negative | System | Vouched operator earns 3+ negative ratings (voucher penalized) |
+
+### Scoring Formula
+
+```
+trust_score = (positive - negative) / total_feedback
+trust_percentage = positive / total_feedback * 100
+
+Example:
+  37 positive, 4 neutral, 1 negative = 42 total
+  trust_score = (37 - 1) / 42 = 0.857
+  trust_percentage = 37/42 = 88.1% positive
+```
+
+**Display:** Like TradeMe — show the raw counts AND the percentage. `88% positive (42 ratings)`. Operators can see the breakdown. Maintainers can read individual feedback comments.
+
+### Trust Score Schema
+
+```yaml
+# In operator's hive-scoped profile (Tier 2 of operator.yaml)
+hives:
+  - hive: mellanon/security-tools
+    trust_zone: trusted
+    feedback:
+      positive: 37
+      neutral: 4
+      negative: 1
+      total: 42
+      percentage: 88.1
+    feedback_log:                        # last N entries, append-only
+      - type: positive
+        from: jordan
+        context: "PR #47 merged"
+        comment: "Clean implementation, thorough tests"
+        timestamp: 2026-02-05T14:30:00Z
+      - type: neutral
+        from: kim
+        context: "PR #52 merged after revision"
+        comment: "Good work, needed revision on edge cases"
+        timestamp: 2026-02-04T09:15:00Z
+```
+
+### Zone Promotion Thresholds
+
+Maintainers can set thresholds for trust zone promotions in `hive.yaml`:
+
+```yaml
+trust:
+  scoring:
+    promotion_thresholds:
+      trusted:
+        min_positive: 5                # at least 5 positive ratings
+        min_percentage: 80             # at least 80% positive
+        min_age_days: 14               # member for at least 2 weeks
+      maintainer:
+        min_positive: 20               # at least 20 positive ratings
+        min_percentage: 90             # at least 90% positive
+        min_age_days: 90               # member for at least 3 months
+        vouches_from_maintainers: 1    # at least 1 maintainer vouch
+```
+
+**Promotion is still human-gated.** Thresholds are eligibility criteria, not automatic promotion. The maintainer reviews the profile and decides.
+
+### Cross-Hive Portability
+
+An operator's feedback history is visible across hives (Tier 1 of operator profile — public). When joining a new hive:
+
+- New hive sees: `@andreas — 88% positive (42 ratings) in security-tools, 92% positive (24 ratings) in community-tools`
+- This is **evidence**, not authority — the new hive's maintainer decides if this warrants faster promotion
+- Feedback earned in one hive does NOT transfer as ratings in another — each hive maintains its own score
+- Cross-hive summary is read-only social proof, like a LinkedIn recommendation from another company
+
+### Decay
+
+Inactive trust decays:
+- No contributions in 90 days → feedback score grayed out on profile ("Inactive")
+- No contributions in 180 days → feedback score archived (still visible but marked historical)
+- Returning operators restart their active feedback counter but keep their historical record
+
+### Design Principles
+
+- **Feedback is from verified work, not votes.** You can't "like" someone's profile. Feedback comes from code reviews, PR merges, swarm completions — auditable events.
+- **Negative feedback requires explanation.** A reviewer can't give negative feedback without a comment explaining why. This prevents drive-by downvoting.
+- **Feedback is append-only.** Once recorded, feedback cannot be edited or deleted. The git history IS the audit trail.
+- **Raw data is always visible.** Never just show a percentage — always show `37 positive, 4 neutral, 1 negative`. Let people make their own assessment.
+
+## Observability
+
+Trust, work, and collaboration events need to be observable — not just for debugging but for understanding how the network operates.
+
+### Event Model
+
+The Hive extends PAI's Signal observability framework with hive-specific event types:
+
+| Event Type | What It Records | Layer |
+|-----------|----------------|-------|
+| `hive.join` | Operator joins a hive (identity provider, vouch if any) | Hub |
+| `hive.leave` | Operator leaves or is removed from a hive | Hub |
+| `spoke.publish` | Operator's spoke status updated | Spoke |
+| `work.posted` | New work item created | Hub |
+| `work.claimed` | Operator claims work | Hub + Local |
+| `work.completed` | Work passes three-gate verification | Hub |
+| `work.abandoned` | Work claimed but not delivered | Hub |
+| `swarm.formed` | Swarm sealed with assigned roles | Hub |
+| `swarm.dissolved` | Swarm completes and dissolves | Hub |
+| `trust.feedback` | Positive/neutral/negative feedback recorded | Hub |
+| `trust.promotion` | Operator promoted to new trust zone | Hub |
+| `trust.vouch` | Operator vouches for another | Hub |
+| `skill.installed` | Operator installs a skill from the network | Local |
+| `skill.published` | Skill registered in hub's skill registry | Hub |
+| `security.secret_detected` | Secret scanning blocked a commit | Local |
+| `security.content_flagged` | Content filter flagged inbound content | Local |
+
+### Three-Layer Observability (from PAI Signal)
+
+| Layer | How | What You Get |
+|-------|-----|-------------|
+| **Layer 0: CLI** | `jq` queries on JSONL event files | Raw power, zero dependencies |
+| **Layer 1: Scripts** | Pre-built query scripts (e.g., `trust-trends.sh`, `swarm-activity.sh`) | One-liner answers to common questions |
+| **Layer 2: Dashboard** | `blackboard serve` with web UI, or Grafana stack | Visual browsing, trace waterfall, time-series trends |
+
+### Event Storage
+
+Events are stored as append-only JSONL — one file per day, per level:
+
+```
+~/.pai/events/local/2026-02-06.jsonl     # Local events
+~/.pai/events/spoke/2026-02-06.jsonl     # Spoke events
+~/.pai/events/hub/2026-02-06.jsonl       # Hub events (pulled from hive)
+```
+
+The same 90-day rotation and PII scrubbing from PAI Signal applies.
 
 ## Prior Art
 
@@ -178,3 +329,7 @@ Quantitative trust that compounds over time and is portable across hives.
 | [pai-content-filter](https://github.com/jcfischer/pai-content-filter) | Inbound security (Layers 4-5-6). 34 patterns, sandbox, audit trail. 389 tests. |
 | ivy-blackboard event log | Append-only audit trail of all agent actions |
 | pai-collab CONTRIBUTORS.yaml | Per-operator trust zone assignments |
+| PAI Signal | Three-layer observability framework (CLI → scripts → Grafana). Event schema, JSONL storage, PII scrubbing, 90-day rotation. |
+| TradeMe seller ratings | Positive/neutral/negative feedback model with visible breakdown. Social proof through verified transactions. |
+| LinkedIn endorsements | Professional network with skill endorsements and recommendations — but self-reported, not work-verified. |
+| Direct Connect hub referrals | Invitation-only access via trusted member vouching. Voucher reputation at stake. |
