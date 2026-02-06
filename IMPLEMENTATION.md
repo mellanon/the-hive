@@ -351,7 +351,7 @@ Extend PAI Signal's observability framework to hive-level events.
 - `blackboard observe --level hub` command
 - PII scrubbing on all events (from Signal's 17-pattern sanitizer)
 
-**Built from:** PAI Signal's event library (TypeScript types, factory functions, JSONL logging, PII scrubbing). Same three-layer model: CLI queries (Layer 0) → scripts (Layer 1) → Grafana dashboard (Layer 2).
+**Built from:** PAI Signal's event schema design (TypeScript types, factory functions, JSONL logging, PII scrubbing). Signal is designed and merged into PAI but not yet deployed — use the event schema and patterns as reference, not a running dependency. Same three-layer model: CLI queries (Layer 0) → scripts (Layer 1) → Grafana dashboard (Layer 2).
 
 ### Phase 7: Web Dashboard (Optional)
 

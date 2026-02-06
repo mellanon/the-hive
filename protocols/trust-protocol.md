@@ -266,12 +266,204 @@ Inactive trust decays:
 - No contributions in 180 days → feedback score archived (still visible but marked historical)
 - Returning operators restart their active feedback counter but keep their historical record
 
+### Dimension Ratings
+
+In addition to the overall positive/neutral/negative, each review includes dimension-specific ratings (1-5 stars) — inspired by Airbnb's category ratings. These capture what _kind_ of collaborator someone is:
+
+| Dimension | What It Measures |
+|-----------|-----------------|
+| **Technical Quality** | Did the work meet standards? Tests pass? Code clean? |
+| **Communication** | Were they responsive, clear, and proactive? |
+| **Reliability** | Did they meet commitments and deadlines? |
+| **Collaboration** | Were they good to work with? Constructive in reviews? |
+
+Plus an independent **Overall** rating that captures the gestalt — the overall experience of working with this operator. The overall is NOT computed from the dimensions. An operator can score 5 on every dimension and still get a 4 overall (or vice versa).
+
+**Display:** Dimension ratings are visible on the operator's hive-scoped profile. The aggregate across all ratings shows a per-dimension average:
+
+```
+@andreas · security-tools hive
+  Technical: ★★★★★ (4.9)    Communication: ★★★★★ (4.8)
+  Reliability: ★★★★☆ (4.6)  Collaboration: ★★★★★ (5.0)
+  Overall: ★★★★★ (4.9)      37 reviews
+```
+
+### Double-Blind Reviews
+
+Reviews are revealed simultaneously. Neither party sees the other's review until both have submitted (or the 14-day window expires).
+
+**Why this is critical for professional networks:** Without double-blind, reviews become a coordination game — both parties leave positive reviews to avoid retaliation. Research by Fradkin et al. (Marketing Science, 2021) showed that Airbnb's simultaneous reveal increased honest negative feedback by 12-17%.
+
+**Mechanism:**
+1. Work completes (PR merged, swarm dissolved)
+2. Both parties have 14 days to submit reviews
+3. Reviews are stored encrypted until both submit or the window closes
+4. Reveal: both reviews become visible simultaneously
+5. If only one party reviews, that review is revealed after 14 days
+
+**Who reviews whom:**
+
+| Interaction | Party A Reviews | Party B Reviews |
+|-------------|----------------|----------------|
+| PR submission | Reviewer reviews contributor | Contributor reviews reviewer's feedback quality |
+| Swarm work | Peers review each other | Each operator reviews their swarm experience |
+| Maintainer review | Maintainer reviews operator | Operator reviews maintainer's governance |
+
 ### Design Principles
 
 - **Feedback is from verified work, not votes.** You can't "like" someone's profile. Feedback comes from code reviews, PR merges, swarm completions — auditable events.
 - **Negative feedback requires explanation.** A reviewer can't give negative feedback without a comment explaining why. This prevents drive-by downvoting.
 - **Feedback is append-only.** Once recorded, feedback cannot be edited or deleted. The git history IS the audit trail.
 - **Raw data is always visible.** Never just show a percentage — always show `37 positive, 4 neutral, 1 negative`. Let people make their own assessment.
+- **Double-blind is non-negotiable.** Simultaneous reveal prevents retaliation and review inflation. No exceptions.
+
+## Dimension 5: Badges (Designed)
+
+Badges are earned certifications that signal sustained excellence. Inspired by Airbnb's Superhost program: measurable criteria, rolling-window evaluation, you can lose them.
+
+**Design constraint:** Few badges, high bar. Badge inflation destroys trust signals. Four badges maximum — each represents a distinct type of value to the network.
+
+### The Four Badges
+
+#### 1. Hive Star
+
+The primary excellence badge — like Airbnb's Superhost. Signals: "this operator consistently delivers quality work."
+
+| Criterion | Threshold | Window |
+|-----------|-----------|--------|
+| Overall rating | 4.8+ stars | Trailing 12 months |
+| Positive feedback | 90%+ positive | Trailing 12 months |
+| Completed work items | 10+ | Trailing 12 months |
+| Abandonment rate | < 5% | Trailing 12 months |
+| Response time | Signal interest within 48h of matching work posted | Trailing 12 months |
+| Security record | Zero security violations | Trailing 12 months |
+
+**What it signals:** Reliable, high-quality contributor. Safe to work with.
+**What it unlocks:** Priority in work matching, visible badge on profile, faster trust promotion consideration.
+
+#### 2. Guardian
+
+Security and quality assurance excellence. Signals: "this operator makes the network safer."
+
+| Criterion | Threshold | Window |
+|-----------|-----------|--------|
+| Reviews given | 15+ peer reviews | Trailing 12 months |
+| Review helpfulness | 85%+ rated helpful | Trailing 12 months |
+| Security contributions | 3+ security-related work items completed | Trailing 12 months |
+| Clean scanning record | Zero secrets detected in own submissions | Trailing 12 months |
+| Technical Quality dimension | 4.7+ average | Trailing 12 months |
+
+**What it signals:** Trusted security reviewer. Catches issues others miss.
+**What it unlocks:** Eligible for security-sensitive work items, trusted reviewer role in swarms.
+
+#### 3. Architect
+
+Technical leadership excellence. Signals: "this operator designs systems that work."
+
+| Criterion | Threshold | Window |
+|-----------|-----------|--------|
+| Architect role in swarms | 3+ swarms as architect | Trailing 12 months |
+| Swarm success rate | 90%+ of architect-led swarms completed | Trailing 12 months |
+| Collaboration dimension | 4.8+ average from swarm peers | Trailing 12 months |
+| Skill published | 1+ verified skill in network registry | Ever |
+| Hive Star badge | Must hold Hive Star | Current |
+
+**What it signals:** Proven technical leader. Can decompose complex work and guide a swarm.
+**What it unlocks:** Auto-considered for architect role when swarms form, voice in governance decisions.
+
+#### 4. Catalyst
+
+Community building and mentorship excellence. Signals: "this operator makes others better."
+
+| Criterion | Threshold | Window |
+|-----------|-----------|--------|
+| Vouches given | 3+ successful vouches | Trailing 12 months |
+| Vouchee success rate | 80%+ of vouched operators remain in good standing | Trailing 12 months |
+| Reviews given | 20+ reviews | Trailing 12 months |
+| Review quality | 90%+ rated helpful | Trailing 12 months |
+| Cross-hive activity | Active in 2+ hives | Current |
+
+**What it signals:** Community builder. Invests in others. Grows the network.
+**What it unlocks:** Increased vouch limit, recognized mentor status, eligible for governance roles.
+
+### Badge Evaluation
+
+**Cadence:** Quarterly (every 90 days). Same as Airbnb Superhost.
+
+**Rolling window:** Each evaluation looks at the trailing 12 months of data. Not a fixed period — a sliding window.
+
+**How you lose a badge:**
+- Fail any criterion at a quarterly evaluation → badge removed immediately
+- No grace period, no "one strike" policy
+- Recovery: meet all criteria again → badge restored at next quarterly evaluation
+- Badge history is permanent: "Hive Star (3 consecutive quarters)" or "Hive Star (lost Q3 2026, regained Q4 2026)"
+
+**Badge hierarchy:** Architect requires Hive Star. This prevents someone from earning a leadership badge without first proving they're a reliable contributor.
+
+### Badge Schema
+
+```yaml
+# In operator.yaml (Tier 2 — hive-scoped)
+hives:
+  - hive: mellanon/security-tools
+    badges:
+      - badge: hive-star
+        earned: 2026-04-01
+        consecutive_quarters: 3
+        next_evaluation: 2026-07-01
+        status: active
+      - badge: guardian
+        earned: 2026-07-01
+        consecutive_quarters: 1
+        next_evaluation: 2026-10-01
+        status: active
+
+# In hive.yaml (configurable thresholds)
+trust:
+  badges:
+    enabled: true
+    evaluation_cadence_days: 90
+    thresholds:
+      hive_star:
+        min_overall_rating: 4.8
+        min_positive_percentage: 90
+        min_completed_items: 10
+        max_abandonment_rate: 5
+        max_response_hours: 48
+      guardian:
+        min_reviews_given: 15
+        min_review_helpfulness: 85
+        min_security_items: 3
+      architect:
+        min_swarms_as_architect: 3
+        min_swarm_success_rate: 90
+        min_collaboration_rating: 4.8
+        requires_badge: hive_star
+      catalyst:
+        min_successful_vouches: 3
+        min_vouchee_success_rate: 80
+        min_reviews_given: 20
+        min_review_helpfulness: 90
+        min_hive_count: 2
+```
+
+### Why Four and Only Four
+
+| Badge | Value Type | Network Need |
+|-------|-----------|-------------|
+| **Hive Star** | Consistent delivery | "Can I trust this person to deliver?" |
+| **Guardian** | Quality assurance | "Can I trust this person to catch problems?" |
+| **Architect** | Technical leadership | "Can I trust this person to lead a complex effort?" |
+| **Catalyst** | Community growth | "Does this person make the network stronger?" |
+
+These four cover the essential trust questions in a collaboration network. Adding more dilutes the signal. If a new badge is proposed, it must answer a trust question that none of the existing four address.
+
+### Anti-Patterns
+
+- **No "years of service" badge.** Tenure is not trust. An operator who's been around for 2 years with mediocre work doesn't deserve a badge.
+- **No "number of contributions" badge.** Volume without quality is noise. The Hive Star already requires 10+ items — but also requires 90%+ positive and 4.8+ rating.
+- **No self-nominated badges.** All criteria are measured from auditable events. No applications, no committees.
+- **No permanent badges.** Every badge is re-evaluated quarterly. Past performance does not guarantee future status.
 
 ## Observability
 
@@ -279,7 +471,7 @@ Trust, work, and collaboration events need to be observable — not just for deb
 
 ### Event Model
 
-The Hive extends PAI's Signal observability framework with hive-specific event types:
+The Hive defines hive-specific event types following the PAI Signal observability design (Signal is designed and merged into PAI but not yet deployed — the event schema and JSONL storage patterns are the reference, not a running dependency):
 
 | Event Type | What It Records | Layer |
 |-----------|----------------|-------|
