@@ -1,10 +1,37 @@
 # Architecture
 
+## The Blackboard Model
+
+The Hive protocol is built on the **blackboard pattern** (Hayes-Roth, 1985) — a shared coordination surface where independent agents read and write without direct coupling. This pattern appears at every level of the architecture, qualified by scope:
+
+| Blackboard | Scope | Storage | Access | Implementation |
+|------------|-------|---------|--------|----------------|
+| **Local Blackboard** | One operator, one machine | SQLite | Real-time, multi-agent | ivy-blackboard |
+| **Spoke Blackboard** | One operator → network | YAML files | Snapshot, published | `.collab/` contract |
+| **Hub Blackboard** | Community, multi-operator | Git repository | Async, human-reviewed | pai-collab |
+
+**The pattern is the same at every level** — a surface where participants coordinate without direct coupling. What changes is scope, storage, and access model. A local blackboard is private and real-time. A spoke blackboard is a curated projection. A hub blackboard is shared and governed.
+
+```
+LOCAL BLACKBOARD          Operator's private surface.
+(ivy-blackboard)          SQLite, real-time, multi-agent.
+        │
+        │  spoke projects selected state upward
+        ▼
+SPOKE BLACKBOARD          Operator's network projection.
+(.collab/)                manifest.yaml + status.yaml, curated snapshot.
+        │
+        │  hub aggregates spoke blackboards
+        ▼
+HUB BLACKBOARD            Community's shared surface.
+(pai-collab)              Git-based, multi-operator, human-reviewed.
+```
+
 ## The Three-Layer Model
 
-The Hive protocol defines three coordination layers. Each layer is independent — an operator can use just the local layer without connecting to any hub. The layers compose upward when operators want to collaborate.
+The Hive protocol defines three coordination layers. Each layer is independent — an operator can use just the local blackboard without connecting to any hub. The layers compose upward when operators want to collaborate.
 
-### Local Layer
+### Local Layer (Local Blackboard)
 
 The operator's private coordination surface. Manages agent sessions, work items, heartbeats, and events on a single machine.
 
@@ -22,9 +49,9 @@ The operator's private coordination surface. Manages agent sessions, work items,
 
 **Reference implementation:** [ivy-blackboard](https://github.com/jcfischer/ivy-blackboard) (state) + [ivy-heartbeat](https://github.com/jcfischer/ivy-heartbeat) (time/dispatch)
 
-### Spoke Layer
+### Spoke Layer (Spoke Blackboard)
 
-The operator's projection to the network. A lightweight contract that exposes selected local state to a hub without coupling local internals to the network.
+The operator's projection to the network. A lightweight contract that exposes selected local blackboard state to a hub without coupling local internals to the network.
 
 **Responsibilities:**
 - Manifest: who you are (identity, project, license, capabilities)
@@ -41,7 +68,7 @@ The operator's projection to the network. A lightweight contract that exposes se
 
 **Design source:** [pai-collab Issue #80](https://github.com/mellanon/pai-collab/issues/80)
 
-### Hub Layer
+### Hub Layer (Hub Blackboard)
 
 The shared coordination surface for a community. Where operators find each other, form swarms, and build trust through verified contributions.
 
