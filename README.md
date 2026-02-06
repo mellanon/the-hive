@@ -138,4 +138,6 @@ Every contribution to The Hive goes through pai-collab, so you're testing the pr
 
 ## License
 
-MIT
+This protocol specification is licensed under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). You are free to share, adapt, and build upon this work — including commercially — with attribution.
+
+Reference implementations of The Hive protocol will be licensed separately.
