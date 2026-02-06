@@ -76,21 +76,95 @@ The existing three-zone model from pai-collab:
 - **Promotion is explicit.** A human maintainer promotes an operator based on verified contribution history.
 - **Two-level scoping:** Trust can be scoped to a hive (overall) or to a specific project within a hive.
 
-## Dimension 3: Trust Scoring (Planned)
+## Dimension 3: Vouching (Designed)
+
+A trusted operator can vouch for another operator — staking their own reputation on the referral. Like the Direct Connect hub model: you get in because someone trusted put their name on you.
+
+### How Vouching Works
+
+```
+Operator A (trusted in Hive X)
+    │
+    │  vouches for
+    ▼
+Operator B (wants to join Hive X)
+    │
+    │  result
+    ▼
+Operator B joins at "untrusted" zone, but with:
+  - Accelerated review priority (vouched PRs reviewed faster)
+  - Voucher visible on profile (social proof)
+  - Voucher's reputation linked (skin in the game)
+```
+
+**Key principle:** Vouching is NOT automatic trust promotion. Operator B still starts as `untrusted` and still passes through all security layers. The vouch provides:
+
+1. **Access** — for closed/invite-only hives, a vouch from a trusted member is the entry ticket
+2. **Social proof** — other operators and maintainers can see who vouched for you
+3. **Accelerated trust building** — maintainers may promote vouched operators faster based on the voucher's reputation
+4. **Accountability chain** — the voucher's reputation is partially linked to the vouched operator's behavior
+
+### Vouch Schema
+
+```yaml
+# In the hive's trust ledger (CONTRIBUTORS.yaml or equivalent)
+vouches:
+  - voucher: <handle>                    # who is vouching
+    voucher_trust_zone: trusted          # voucher must be trusted or maintainer
+    vouchee: <handle>                    # who is being vouched for
+    reason: "Worked together on content-filter in security-tools hive"
+    timestamp: <ISO 8601>
+    cross_hive_evidence:                 # optional — reference to other hive history
+      hive: <org/repo>
+      trust_zone: trusted
+      contributions: 12
+```
+
+### Vouch Rules
+
+| Rule | Description |
+|------|-------------|
+| **Minimum voucher trust** | Only `trusted` or `maintainer` operators can vouch |
+| **Vouch limit** | Each operator can vouch for at most N operators per time period (prevents vouching spam) |
+| **Accountability** | If a vouched operator's contribution is rejected for security reasons, the voucher's trust score is noted (not automatically penalized, but the event is logged for maintainer review) |
+| **Cross-hive vouching** | An operator trusted in Hive A can vouch for someone joining Hive B — the vouch carries the evidence but Hive B's maintainer decides |
+| **Vouch revocation** | A voucher can revoke their vouch if circumstances change |
+| **No transitive vouching** | B vouched by A cannot vouch for C using A's trust — vouching is direct, not chained |
+
+### Hive Configuration
+
+Hives can configure their vouching policy in `hive.yaml`:
+
+```yaml
+trust:
+  vouching:
+    enabled: true
+    required_for_join: false       # true = invite-only via vouch (DC hub model)
+    min_voucher_zone: trusted      # minimum trust zone to vouch
+    max_vouches_per_month: 5       # prevents vouching spam
+    cross_hive: true               # accept vouches from operators in other hives
+```
+
+**Hive type implications:**
+- **Open hive:** vouching optional, accelerates trust but not required to join
+- **Closed hive:** vouching required (`required_for_join: true`) — the Direct Connect model
+- **Enterprise hive:** vouching typically disabled (SSO group membership replaces it)
+
+## Dimension 4: Trust Scoring (Planned)
 
 Quantitative trust that compounds over time and is portable across hives.
 
 ### Open Questions
 
 1. How is trust scored quantitatively? (Contribution count? Review quality? Swarm success rate?)
-2. How does trust transfer across hives? (Vouching? Federation? Shared ledger?)
-3. What events build trust? (Code merged? Review completed? Swarm delivered?)
-4. What events reduce trust? (Abandoned work? Failed reviews? Timeout?)
-5. How is trust verified by third parties? (Cryptographic signatures? Public ledger?)
+2. What events build trust? (Code merged? Review completed? Swarm delivered? Vouching record?)
+3. What events reduce trust? (Abandoned work? Failed reviews? Timeout? Vouched operator misconduct?)
+4. How is trust verified by third parties? (Cryptographic signatures? Public ledger?)
 
 ### Design Considerations
 
-- Trust scoring must build on the security infrastructure (Dimensions 1-2), not replace it
+- Trust scoring must build on the security infrastructure (Dimensions 1-2) and vouching (Dimension 3), not replace them
+- Vouching history is a trust signal — operators who vouch well (their vouchees succeed) build reputation; operators who vouch poorly lose credibility
 - Scores should be derived from auditable events — the same audit trail that powers security
 - ivy-blackboard's event log and pai-content-filter's audit trail are the raw data sources
 - The spoke contract (`.collab/status.yaml`) is the projection mechanism for trust data to the hub

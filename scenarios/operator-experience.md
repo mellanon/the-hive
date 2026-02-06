@@ -335,6 +335,8 @@ Events that need your attention. The "inbox" that work completion, trust changes
 │  └─────────────────────────────────────────────────────────┘    │
 │                                                                 │
 │  📋 EARLIER                                                     │
+│  🤝 Vouch request: @jordan wants you to vouch for @kim         │
+│     to join security-tools hive · "Worked with on specflow"    │
 │  Work completed: "Secret scanning CI gate" · 2 days ago        │
 │  Skill update available: content-filter v0.2.1 · 3 days ago   │
 │                                                                 │
