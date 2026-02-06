@@ -3,7 +3,7 @@
 > **Status:** Draft
 > **Resolved:** 2026-02-06
 
-![Swarms — dynamic operator+agent formations](../assets/concepts/hivemind-sketch-2-swarms.jpg)
+![Swarms — dynamic operator+agent formations](../assets/concepts/hivemind-sketch-2-swarms.png)
 
 ## Purpose
 

@@ -3,7 +3,7 @@
 > **Status:** Draft
 > **Resolved:** 2026-02-06
 
-![Hives — managed collaboration spaces](../assets/concepts/hivemind-sketch-1-hives.jpg)
+![Hives — managed collaboration spaces](../assets/concepts/hivemind-sketch-1-hives.png)
 
 ## Purpose
 

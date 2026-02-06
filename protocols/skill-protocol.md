@@ -3,7 +3,7 @@
 > **Status:** Draft
 > **Resolved:** 2026-02-06
 
-![Skill Marketplace — downloadable capabilities](../assets/concepts/hivemind-sketch-5-skills.jpg)
+![Skill Marketplace — downloadable capabilities](../assets/concepts/hivemind-sketch-5-skills.png)
 
 ## Purpose
 
