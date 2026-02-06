@@ -76,6 +76,8 @@ The Hive protocol defines a three-layer coordination model:
 | **Spoke** | Spoke contract | [pai-collab #80](https://github.com/mellanon/pai-collab/issues/80) | Designed |
 | **Local (state)** | ivy-blackboard | [jcfischer/ivy-blackboard](https://github.com/jcfischer/ivy-blackboard) | Shipped |
 | **Local (time)** | ivy-heartbeat | [jcfischer/ivy-heartbeat](https://github.com/jcfischer/ivy-heartbeat) | Shipped |
+| **Security (outbound)** | pai-secret-scanning | [jcfischer/pai-secret-scanning](https://github.com/jcfischer/pai-secret-scanning) | Shipped |
+| **Security (inbound)** | pai-content-filter | [jcfischer/pai-content-filter](https://github.com/jcfischer/pai-content-filter) | Shipped |
 
 ## Protocol Specifications
 
@@ -86,7 +88,7 @@ The Hive defines the following protocols (work in progress):
 | [Hive Protocol](protocols/hive-protocol.md) | How hives form, govern, and federate | Draft |
 | [Spoke Protocol](protocols/spoke-protocol.md) | How operators project state to hives | Draft |
 | [Swarm Protocol](protocols/swarm-protocol.md) | How operators form around work dynamically | Planned |
-| [Trust Protocol](protocols/trust-protocol.md) | How trust is earned, scored, and made portable | Planned |
+| [Trust Protocol](protocols/trust-protocol.md) | How trust is earned, scored, and made portable | Draft |
 | [Work Protocol](protocols/work-protocol.md) | How work is posted, claimed, and completed | Planned |
 | [Skill Protocol](protocols/skill-protocol.md) | How skills are packaged, shared, and installed | Planned |
 | [Operator Identity](protocols/operator-identity.md) | Operator profiles and verification | Planned |
@@ -107,6 +109,8 @@ The Hive builds on existing, operational infrastructure:
 - **ivy-blackboard** — Local agent coordination via SQLite. Work items, agent sessions, heartbeats, crash recovery. The operator's private nervous system.
 - **ivy-heartbeat** — Autonomous agent dispatch. Periodic checks, condition evaluation, work creation. The clock that wakes agents up.
 - **pai-collab** — The first hive ("Hive Zero"). Multi-operator coordination via GitHub. Projects, reviews, trust model, SOPs. Proof that the model works.
+- **pai-secret-scanning** — Outbound security. Pre-commit hooks + CI gates prevent secrets from leaking into shared repos. 11 custom AI provider patterns + ~150 built-in patterns.
+- **pai-content-filter** — Inbound security. Scans shared content for prompt injection before it enters agent context. 34 detection patterns, sandbox enforcement, append-only audit trail. 389 tests.
 
 The gap: these components work standalone but lack a **protocol specification** for how they connect into a network of hives. That's what this repository defines.
 

@@ -96,6 +96,88 @@ Operator A                           Operator B
 5. **Trust through work.** Reputation is earned from verified contributions, not claimed.
 6. **Open protocol.** The protocol is MIT. Implementations can vary.
 
+## Security Boundary
+
+Security is not a layer — it's a cross-cutting concern that spans all three layers. The Hive inherits a defense-in-depth model from pai-collab's trust architecture.
+
+### The Six Defense Layers
+
+```
+OUTBOUND DEFENSE (secrets leaving)
+──────────────────────────────────────────────────
+Layer 1: Pre-commit scanning          ← Operator's machine
+         Catches secrets before they enter git history.
+         Tool: gitleaks with custom PAI rules (11 AI provider patterns).
+         Blocks commits containing API keys, credentials, .env values.
+
+Layer 2: CI gate                      ← Repository level
+         Catches anything Layer 1 missed (bypassed hooks, new patterns).
+         Runs on every push and PR via GitHub Actions.
+
+Layer 3: Fork and pull request        ← Structural boundary
+         Human review before merge. Git's native isolation model.
+
+INBOUND DEFENSE (threats entering)
+──────────────────────────────────────────────────
+Layer 4: Content trust boundary       ← Agent context loading
+         Scans inbound markdown for prompt injection before LLM context.
+         34 deterministic patterns (instruction overrides, PII, encoding evasion).
+         No LLM classification — auditable regex + schema validation.
+
+Layer 5: Tool restrictions            ← Agent sandbox
+         Untrusted content = restricted agent.
+         No Bash, no Write, no WebFetch. Read-only MCP access.
+         Quarantine sandbox for acquired external content.
+
+Layer 6: Audit trail                  ← Observability
+         Append-only JSONL log of every content loading decision.
+         Human override with recorded reasoning.
+         Enables detection of slow-burn manipulation patterns.
+```
+
+### How Security Maps to Layers
+
+| Defense | Protects | Where it runs | Implementation |
+|---------|----------|---------------|----------------|
+| **Outbound** (Layers 1-2) | Prevents secrets leaking into shared repos | Local + Hub | [pai-secret-scanning](https://github.com/jcfischer/pai-secret-scanning) |
+| **Structural** (Layer 3) | Isolates contributions for review | Hub | Git fork-and-PR (built-in) |
+| **Inbound** (Layers 4-5) | Prevents prompt injection from compromising agents | Local + Hub | [pai-content-filter](https://github.com/jcfischer/pai-content-filter) |
+| **Observability** (Layer 6) | Detects and records security events | All layers | pai-content-filter audit trail + ivy-blackboard event log |
+
+### Outbound: Secret Scanning
+
+**Problem:** Operators work with private infrastructure — API keys, voice credentials, personal paths. Contributing to a hive requires separating public code from private secrets. Without automated scanning, every contribution is a potential exposure event.
+
+**Solution:** [pai-secret-scanning](https://github.com/jcfischer/pai-secret-scanning) provides two automated gates:
+- **Pre-commit hook** — blocks commits containing secrets on the operator's machine
+- **CI gate** — scans PRs at the repository level before merge
+
+**Coverage:** 11 custom AI provider patterns (Anthropic, OpenAI, ElevenLabs, Telegram, Replicate, HuggingFace, Groq) + ~150 built-in gitleaks patterns (AWS, GCP, Azure, SSH keys, JWTs).
+
+**Position in workflow:** Runs during the "Contrib Prep" phase — after code is built and hardened, before it's submitted for review.
+
+### Inbound: Content Filtering
+
+**Problem:** When agents load content from shared repositories (the blackboard pattern), malicious instructions can be hidden in markdown — prompt injection attacks that cause the reviewing agent to execute unintended actions.
+
+**Solution:** [pai-content-filter](https://github.com/jcfischer/pai-content-filter) provides four-layer defense:
+1. **Pattern matching** — 34 deterministic regex patterns detecting instruction overrides, PII, encoding evasion
+2. **Architectural isolation** — flagged content triggers tool-restricted agent mode (read-only, no shell, no network)
+3. **Audit trail** — every content loading decision logged with source, patterns matched, and reasoning
+4. **Sandbox enforcer** — PreToolUse hook intercepts acquisition commands (`git clone`, `curl`) and redirects to sandbox for scanning before agent access
+
+**Design choice:** Deterministic regex, not LLM classification. Auditable, reproducible, no recursive AI calls.
+
+**Coverage:** Direct prompt injection, encoded payloads (base64, Unicode, hex), format marker exploits (Llama/Mistral delimiters), authority impersonation, incremental drift detection.
+
+### Security as Prerequisite
+
+These aren't optional add-ons. They're prerequisites for collaboration:
+- **Operators must install secret scanning** before their first contribution
+- **Content filtering activates automatically** when agents load shared content
+- **All trust zone transitions** (untrusted → trusted → maintainer) pass through these gates
+- **Maintainers are not exempt** — scanning applies to all contributors regardless of trust zone
+
 ## Ecosystem Map
 
 | Component | Role | Maintainer | Status |
@@ -104,6 +186,8 @@ Operator A                           Operator B
 | [pai-collab](https://github.com/mellanon/pai-collab) | Hub implementation ("Hive Zero") | @mellanon | Operational |
 | [ivy-blackboard](https://github.com/jcfischer/ivy-blackboard) | Local layer (state) | @jcfischer | Shipped |
 | [ivy-heartbeat](https://github.com/jcfischer/ivy-heartbeat) | Local layer (time/dispatch) | @jcfischer | Shipped |
+| [pai-secret-scanning](https://github.com/jcfischer/pai-secret-scanning) | Security (outbound) | @jcfischer | Shipped |
+| [pai-content-filter](https://github.com/jcfischer/pai-content-filter) | Security (inbound) | @jcfischer | Shipped |
 | Spoke contract | Spoke layer | TBD | Designed ([#80](https://github.com/mellanon/pai-collab/issues/80)) |
 
 ## What's Specified vs What's Built
@@ -115,6 +199,8 @@ Operator A                           Operator B
 | Spoke contract | Yes (Issue #80) | No | Schema designed, security reviewed. Implementation pending. |
 | Hub coordination | Partially (pai-collab SOPs) | Yes | Working but not formalized as a protocol. |
 | Swarm formation | No | No | Core protocol gap. |
+| Outbound security | Yes (pai-secret-scanning) | Yes | Shipped. Pre-commit + CI gate. 11 custom AI patterns. |
+| Inbound security | Yes (pai-content-filter) | Yes | Shipped. 34 patterns + sandbox + audit trail. 389 tests. |
 | Trust scoring | Partially (trust zones) | Partially | Binary zones exist. Quantitative scores do not. |
 | Work discovery | No | No | Work items are local. No cross-hive discovery. |
 | Skill distribution | No | No | Skills exist locally. No network distribution. |
