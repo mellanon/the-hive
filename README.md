@@ -2,6 +2,8 @@
 
 A protocol for human-operated agent networks. Humans at the centre.
 
+![The Hive Network — hives connected by operators and their swarms](assets/concepts/hivemind-sketch-6-network.png)
+
 ## What is The Hive?
 
 The Hive is an open protocol for communities to form **hives** and bring their **swarms** of agents with them. It connects skilled humans — each amplified by their personal AI — into dynamic swarms that form around work, build trust through verified contributions, and dissolve when done.
@@ -87,11 +89,11 @@ The Hive defines the following protocols (work in progress):
 |----------|-------------------|--------|
 | [Hive Protocol](protocols/hive-protocol.md) | How hives form, govern, and federate | Draft |
 | [Spoke Protocol](protocols/spoke-protocol.md) | How operators project state to hives | Draft |
-| [Swarm Protocol](protocols/swarm-protocol.md) | How operators form around work dynamically | Planned |
+| [Swarm Protocol](protocols/swarm-protocol.md) | How operators form around work dynamically | Draft |
 | [Trust Protocol](protocols/trust-protocol.md) | How trust is earned, scored, and made portable | Draft |
-| [Work Protocol](protocols/work-protocol.md) | How work is posted, claimed, and completed | Planned |
-| [Skill Protocol](protocols/skill-protocol.md) | How skills are packaged, shared, and installed | Planned |
-| [Operator Identity](protocols/operator-identity.md) | Operator profiles and verification | Planned |
+| [Work Protocol](protocols/work-protocol.md) | How work is posted, claimed, and completed | Draft |
+| [Skill Protocol](protocols/skill-protocol.md) | How skills are packaged, shared, and installed | Draft |
+| [Operator Identity](protocols/operator-identity.md) | Operator profiles and verification | Draft |
 
 ## Scenarios
 

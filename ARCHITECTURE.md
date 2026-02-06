@@ -1,5 +1,65 @@
 # Architecture
 
+## The Protocol Stack
+
+Like the Internet's TCP/IP model, The Hive defines a layered protocol stack where each layer has a clear responsibility, communicates through defined interfaces, and can evolve independently. Lower layers provide services to upper layers. Each layer can be implemented differently as long as it honours the contract.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  APPLICATION    Swarm Protocol, Work Protocol, Skill Protocol   │
+│                 How operators collaborate, find work, share     │
+│                 capabilities. The "what people do" layer.       │
+├─────────────────────────────────────────────────────────────────┤
+│  IDENTITY       Operator Identity, Trust Protocol               │
+│                 Who you are, what you've earned, what you can   │
+│                 do. Portable across hives. The "who" layer.     │
+├─────────────────────────────────────────────────────────────────┤
+│  COORDINATION   Hive Protocol, Spoke Protocol                   │
+│                 How blackboards connect — local to spoke to     │
+│                 hub. The "how things talk" layer.               │
+├─────────────────────────────────────────────────────────────────┤
+│  SECURITY       Secret Scanning, Content Filtering, Audit       │
+│                 Cross-cutting. Spans all layers. The "safety"   │
+│                 layer. Not optional.                            │
+├─────────────────────────────────────────────────────────────────┤
+│  TRANSPORT      Git (commits, PRs, branches, forks)             │
+│                 The reliable delivery mechanism. Immutable      │
+│                 history, cryptographic integrity, distributed.  │
+├─────────────────────────────────────────────────────────────────┤
+│  STORAGE        Local Blackboard (SQLite), Spoke (YAML), Hub    │
+│                 (Git repo). The persistence layer.              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### OSI/TCP-IP Parallels
+
+| TCP/IP Layer | The Hive Layer | Parallel |
+|-------------|---------------|----------|
+| Application (HTTP, SMTP) | Swarm, Work, Skill protocols | What users actually do |
+| Presentation/Session | Operator Identity, Trust | Who you are, session context |
+| Transport (TCP/UDP) | Git (commits, PRs) | Reliable, ordered delivery |
+| Network (IP) | Hive + Spoke protocols | Addressing and routing between nodes |
+| Data Link/Physical | SQLite, YAML, Git repos | How data is stored and accessed |
+
+**Key insight from TCP/IP:** The Internet succeeded because each layer has a simple, well-defined contract. HTTP doesn't care if you're on WiFi or Ethernet. Similarly, the Swarm Protocol doesn't care if the hub blackboard is GitHub or Discord — it talks to the Hive Protocol interface, which talks to the Transport layer (git).
+
+**Key insight from OSI:** Security is cross-cutting (like TLS — it can operate at multiple layers). In The Hive, secret scanning operates at the transport layer (pre-commit), content filtering operates at the coordination layer (context loading), and audit operates at all layers.
+
+## Agent Team Patterns
+
+Research from Anthropic's agent team experiments (building a C compiler with autonomous agent swarms) validates several architectural choices in The Hive:
+
+| Pattern | Anthropic Finding | The Hive Application |
+|---------|------------------|---------------------|
+| **File-based locking** | Agents claim work by writing lock files; git conflicts prevent duplicates | ivy-blackboard's atomic `work claim` (SQLite transactions) serves the same purpose at the local layer |
+| **Role specialization** | Different agents assume distinct roles (optimizer, critic, documenter) rather than all solving the same problem | Swarm Protocol's role model: architect, builder, reviewer, documenter, tester |
+| **Task decomposition** | Independent failing tests let each agent pick a different one; monolithic tasks need architectural splitting | Swarm Protocol requires an architect to decompose work before builders parallelize |
+| **Test-driven feedback** | High-quality tests are the agent's primary guidance mechanism | Work Protocol's three-gate verification: CI tests, peer review, maintainer merge |
+| **Comparative oracle** | A known-good reference enables concurrent debugging | Competing proposals: multiple independent approaches to the same problem, maintainer selects |
+| **Eventual consistency** | Agents pull, merge, push — git's conflict detection handles coordination | Hub blackboard is eventually consistent (git-based, PR-mediated). Local blackboard is strongly consistent (SQLite). Spoke bridges them. |
+
+**The critical difference:** Anthropic's experiment used unsupervised agents in a loop (`while true; do claude...; done`). The Hive puts humans in the loop — agents do work, humans review and govern. This is the architectural choice that makes trust possible.
+
 ## The Blackboard Model
 
 The Hive protocol is built on the **blackboard pattern** (Hayes-Roth, 1985) — a shared coordination surface where independent agents read and write without direct coupling. This pattern appears at every level of the architecture, qualified by scope:

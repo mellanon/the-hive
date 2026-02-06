@@ -2,6 +2,8 @@
 
 > **Status:** Draft
 
+![Trust Ledger — history, provenance, approval](../assets/concepts/hivemind-sketch-4-trust.png)
+
 ## Purpose
 
 The trust protocol defines how trust is established, enforced, and built within and across hives. Trust has two dimensions: **security infrastructure** (automated, enforced) and **reputation** (earned, scored).
