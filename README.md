@@ -2,7 +2,7 @@
 
 A protocol for human-operated agent networks. Humans at the centre.
 
-![The Hive Network — hives connected by operators and their swarms](assets/concepts/hivemind-sketch-6-network.png)
+![The Hive Network — hives connected by operators and their swarms](assets/concepts/hivemind-sketch-6-network.jpg)
 
 ## What is The Hive?
 

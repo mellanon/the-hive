@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 
-![Trust Ledger — history, provenance, approval](../assets/concepts/hivemind-sketch-4-trust.png)
+![Trust Ledger — history, provenance, approval](../assets/concepts/hivemind-sketch-4-trust.jpg)
 
 ## Purpose
 
