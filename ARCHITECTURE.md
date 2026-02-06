@@ -123,6 +123,41 @@ Operator A                           Operator B
 5. **Trust through work.** Reputation is earned from verified contributions, not claimed.
 6. **Open protocol.** The protocol is MIT. Implementations can vary.
 
+## The Blackboard CLI
+
+`blackboard` is a single CLI that operates at all three blackboard levels. The level is always explicit via the `--level` flag — no auto-detection, no ambiguity.
+
+```
+blackboard <command> --level local|spoke|hub
+```
+
+### Design Decision
+
+One CLI, explicit level. This was chosen over:
+- ~~Auto-detect by directory context~~ — too magical, ambiguous in repos that have both `.collab/` and local blackboard
+- ~~Separate CLIs per level~~ — more to install, harder to discover, splits documentation
+
+### Commands by Level
+
+| Level | Commands | What they operate on |
+|-------|----------|---------------------|
+| `--level local` | `init`, `status`, `work`, `agent`, `observe`, `sweep`, `serve` | Local blackboard (`~/.pai/blackboard/local.db`) |
+| `--level spoke` | `init`, `status`, `validate` | Spoke blackboard (`.collab/manifest.yaml` + `status.yaml`) |
+| `--level hub` | `init`, `pull`, `registry`, `status` | Hub blackboard (REGISTRY.md, spoke aggregation) |
+
+### Analogy: RabbitMQ Federation
+
+The blackboard model shares structural similarities with RabbitMQ's messaging architecture:
+
+| RabbitMQ | The Hive | Parallel |
+|----------|----------|----------|
+| **Queue** | Local blackboard | Where work sits, agents consume from it |
+| **Exchange/Binding** | Spoke blackboard | Routes selected state from local → hub |
+| **Broker** | Hub blackboard | Aggregates across multiple spokes |
+| **Federation** | Multi-hub (future) | Hubs sync with each other |
+
+Like RabbitMQ, each level can operate independently. A local blackboard doesn't need a hub. A hub doesn't need to federate. But the protocol supports composition when you need it.
+
 ## Security Boundary
 
 Security is not a layer — it's a cross-cutting concern that spans all three layers. The Hive inherits a defense-in-depth model from pai-collab's trust architecture.

@@ -54,20 +54,22 @@ git:
 
 ## CLI Commands
 
-### Spoke-side
+`blackboard` is a single CLI that operates at all three blackboard levels via an explicit `--level` flag. The spoke-level commands are documented here; see the full CLI specification in [ARCHITECTURE.md](../ARCHITECTURE.md).
+
+### Spoke-level commands
 
 | Command | Description |
 |---------|-------------|
-| `blackboard init` | Create `.collab/` with manifest template + GitHub Action |
-| `blackboard status` | Generate status.yaml from current repo state |
-| `blackboard validate` | Validate manifest + status against schema |
+| `blackboard init --level spoke` | Create `.collab/` with manifest template + GitHub Action |
+| `blackboard status --level spoke` | Generate status.yaml from current repo state |
+| `blackboard validate --level spoke` | Validate manifest + status against schema |
 
-### Hub-side
+### Hub-level commands (spoke aggregation)
 
 | Command | Description |
 |---------|-------------|
-| `blackboard pull` | Aggregate status from all registered spokes |
-| `blackboard registry` | List registered spokes and their health |
+| `blackboard pull --level hub` | Aggregate status from all registered spokes |
+| `blackboard registry --level hub` | List registered spokes and their health |
 
 ## Security Considerations
 
