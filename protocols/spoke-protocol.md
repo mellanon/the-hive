@@ -27,7 +27,7 @@ name: <project-name>
 hub: <org/repo>
 project: <project-id>
 maintainer: <github-handle>
-license: MIT | Apache-2.0 | BSD-2-Clause | BSD-3-Clause | CC-BY-4.0
+license: MIT | Apache-2.0 | BSD-2-Clause | BSD-3-Clause | CC-BY-4.0 | AGPL-3.0
 identity:
   handle: <canonical-handle>
   publicKey: "ssh-ed25519 AAAA..."       # Ed25519 SSH public key

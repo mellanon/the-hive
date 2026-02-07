@@ -1,0 +1,26 @@
+# Spoke manifest for the-hive
+# Projects to: pai-collab (Hive Zero)
+# See: protocols/spoke-protocol.md
+
+schemaVersion: "1.0"
+name: the-hive
+hub: mellanon/pai-collab
+project: the-hive
+maintainer: mellanon
+license: CC-BY-4.0
+
+identity:
+  handle: mellanon
+  publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO6xYoY3NSCNkCSiS4GU+EhZPQFh098vsiUh6KggOg1a"
+  fingerprint: "SHA256:+sgg04W+IN7//6af+CaRDn5PIG6p3adMkbMHa5zWTGk"
+
+security:
+  reflexes:
+    signing: true
+    secretScanning: true
+    sandboxEnforcer: true
+    contentFilter: true
+
+status:
+  test: "bun test"
+  healthCheck: "bun run validate"
