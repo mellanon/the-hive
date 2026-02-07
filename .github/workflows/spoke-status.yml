@@ -1,0 +1,36 @@
+name: Spoke Status
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.collab/**'
+      - 'protocols/**'
+      - 'IMPLEMENTATION.md'
+      - 'ARCHITECTURE.md'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout spoke repo
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install hive-spoke
+        run: |
+          git clone --depth 1 https://github.com/mellanon/hive-spoke.git /tmp/hive-spoke
+          cd /tmp/hive-spoke && bun install
+
+      - name: Validate spoke compliance
+        run: bun /tmp/hive-spoke/src/index.ts validate
+
+      - name: Generate status snapshot
+        run: bun /tmp/hive-spoke/src/index.ts status
+
+      - name: Show status
+        run: cat .collab/status.yaml

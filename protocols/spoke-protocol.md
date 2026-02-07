@@ -2,6 +2,8 @@
 
 > **Status:** Draft
 > **Source:** [pai-collab Issue #80](https://github.com/mellanon/pai-collab/issues/80)
+> **Reference Implementation:** [hive-spoke](https://github.com/mellanon/hive-spoke) (AGPL-3.0)
+> **Operations Guide:** [sops/spoke-operations.md](https://github.com/mellanon/pai-collab/blob/main/sops/spoke-operations.md) in pai-collab
 
 ## Purpose
 
