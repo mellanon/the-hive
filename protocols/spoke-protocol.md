@@ -111,6 +111,104 @@ From [Steffen's security review](https://github.com/mellanon/pai-collab/issues/8
 - **Supply chain:** GitHub Actions must pin dependencies with integrity hashes
 - **Metadata exposure:** `git.dirty` and `git.behindRemote` expose operational state — consider hashing instead of exposing raw values
 
+## Spoke Compliance Verification
+
+The hub cannot reach into a spoke repo to inspect its setup. Instead, compliance is verified through four layers at the projection boundary — when the spoke submits updates to the hub.
+
+### The Four Verification Layers
+
+```
+LAYER 1: PROVABLE (cryptographic evidence)
+  What the hub can mathematically verify.
+
+LAYER 2: DETECTABLE (negative signals)
+  Failures that reveal missing local setup.
+
+LAYER 3: ATTESTED (signed claims)
+  Operator declarations in a signed manifest.
+
+LAYER 4: STRUCTURAL (schema conformance)
+  Whether .collab/ files exist and are valid.
+```
+
+### Layer 1: Provable
+
+Evidence that is cryptographically verifiable — the hub doesn't trust, it checks.
+
+| Signal | Verification | CI Gate |
+|--------|-------------|---------|
+| Commits are signed | Signature checked against `allowed-signers` | Gate 1: Identity |
+| Signing key matches manifest | `manifest.yaml` `identity.publicKey` matches the commit signer | Gate 1: Identity |
+
+**Strength:** Mathematical certainty. A valid Ed25519 signature cannot be forged.
+
+### Layer 2: Detectable
+
+The absence of a problem is evidence the local reflex is working. When local reflexes fail, the hub catches the failure — proving the spoke's defenses have gaps.
+
+| Signal | What It Reveals | CI Gate |
+|--------|----------------|---------|
+| Secret found in PR | Reflex A (pre-commit gitleaks) is not running locally | Gate 2: Security |
+| Unsigned commit in PR | Commit signing is not configured | Gate 1: Identity |
+| Malformed `.collab/` files | `blackboard validate` is not being run before projection | Gate 3: Schema |
+| Stale `status.yaml` (`generatedAt` older than threshold) | Spoke is not maintaining its status | Gate 4: Governance |
+
+**Strength:** Absence of evidence IS evidence of absence. If the hub catches what local reflexes should have blocked, the spoke is non-compliant.
+
+### Layer 3: Attested
+
+Claims in `manifest.yaml` about local setup that the hub cannot independently verify. Because the manifest is signed, false claims are attributable — the operator's Ed25519 signature binds them to the declaration.
+
+| Claim | What It Means | Hub Action |
+|-------|--------------|------------|
+| `security.reflexes.signing: true` | Operator claims commit signing is active | Verified by Layer 1 (provable) — this one upgrades |
+| `security.reflexes.secretScanning: true` | Operator claims gitleaks pre-commit hook is installed | Accepted as signed attestation. Falsified if Layer 2 detects secrets. |
+| `security.reflexes.sandboxEnforcer: true` | Operator claims inbound content is quarantined | Accepted as signed attestation. Not independently verifiable by the hub. |
+| `security.reflexes.contentFilter: true` | Operator claims content filter scans reads | Accepted as signed attestation. Not independently verifiable by the hub. |
+
+**Strength:** Not proof — but lying is traceable. The signed manifest creates non-repudiation: the operator cannot deny they claimed a reflex was active.
+
+> The verification asymmetry is intentional. Outbound reflexes (signing, secret scanning) produce evidence the hub can check. Inbound reflexes (sandbox, content filter) protect the operator's own environment — the hub accepts the claim because the risk is borne by the spoke, not the hub. See [ARCHITECTURE.md](../ARCHITECTURE.md) → Verification Asymmetry.
+
+### Layer 4: Structural
+
+Whether the spoke's `.collab/` directory exists and its files conform to the expected schemas.
+
+| Check | Verification | When |
+|-------|-------------|------|
+| `.collab/manifest.yaml` exists and is valid | Zod schema validation | `blackboard validate` (local) + Hub CI Gate 3 |
+| `.collab/status.yaml` exists and is valid | Zod schema validation | `blackboard validate` (local) + Hub CI Gate 3 |
+| `.collab/operator.yaml` Tier 1 is present | Zod schema validation | `blackboard validate` (local) + Hub CI Gate 3 |
+| Cross-references are consistent | manifest `hub` matches hive, `identity.publicKey` matches signing key | `blackboard validate` (local) |
+
+**Strength:** Binary. Either the structure is right or it isn't.
+
+### Local Pre-Flight: `blackboard validate --level spoke`
+
+Before projecting to the hub, the operator runs validation locally. This catches setup errors before the hub CI ever sees them:
+
+```bash
+blackboard validate --level spoke
+# ✓ .collab/manifest.yaml — valid schema, required fields present
+# ✓ .collab/status.yaml — valid schema, generatedAt is recent
+# ✓ .collab/operator.yaml — Tier 1 fields present, handle matches manifest
+# ✓ Signing configured — gpg.format=ssh, signing key exists
+# ✓ Cross-references — hub field matches known hive, publicKey matches git signing key
+# ✗ status.yaml generatedAt is 3 days old — run: blackboard status --level spoke
+```
+
+### Compliance Summary
+
+```
+Spoke compliance = Provable evidence (Layer 1: signatures verify)
+                 + Absence of negative signals (Layer 2: no secrets, no unsigned commits)
+                 + Signed attestation (Layer 3: manifest claims about local reflexes)
+                 + Structural conformance (Layer 4: .collab/ files valid)
+                 + Freshness (status.yaml generatedAt is recent)
+```
+
+The hub doesn't need to inspect the spoke. It verifies at the boundary, detects failures through negative signals, and accepts signed attestation for the rest.
+
 ## Open Questions
 
 1. How does a spoke register with a hub? (Currently manual REGISTRY.md entry)
