@@ -1,6 +1,6 @@
 # Operator Identity
 
-> **Status:** Draft
+> **Status:** Review
 > **Resolved:** 2026-02-06
 
 ![The Operator — human directing AI agents](../assets/concepts/hivemind-sketch-3-operator.png)
