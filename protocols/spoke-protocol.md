@@ -11,11 +11,12 @@ The spoke protocol defines how an operator projects their local state to a hub w
 
 ## Design Principles
 
-1. **Projection, not exposure** — The spoke publishes a curated view. The hub never reaches into local state.
-2. **Two files** — manifest (human-maintained identity) + status (auto-generated snapshot). Minimal surface area.
+1. **Projection, not exposure** — The spoke publishes a curated view via `.collab/`. The hub reads this projection surface from the spoke's public repo — it never reaches into local state beyond `.collab/`.
+2. **Three files** — manifest (human-maintained identity) + status (auto-generated snapshot) + operator (tiered profile). Minimal surface area.
 3. **Signed by default** — All spoke updates are commit-signed with the operator's Ed25519 SSH key. The spoke is self-authenticating.
 4. **Generic** — The protocol works with any hub, not just pai-collab. A spoke can project to multiple hives.
 5. **Lightweight** — YAML files in `.collab/` at the repo root. No infrastructure required.
+6. **Pull, not push** — The hub fetches spoke state on demand from public repos. No PRs needed for status updates. Private spokes can push via PR as a fallback.
 
 ## Contract
 
@@ -71,22 +72,35 @@ git:
 
 ## CLI Commands
 
-`blackboard` is a single CLI that operates at all three blackboard levels via an explicit `--level` flag. The spoke-level commands are documented here; see the full CLI specification in [ARCHITECTURE.md](../ARCHITECTURE.md).
+The reference implementation is [hive-spoke](https://github.com/mellanon/hive-spoke). The future unified `blackboard` CLI will wrap these commands with `--level spoke|hub` flags.
 
-### Spoke-level commands
-
-| Command | Description |
-|---------|-------------|
-| `blackboard init --level spoke` | Create `.collab/` with manifest template + GitHub Action |
-| `blackboard status --level spoke` | Generate status.yaml from current repo state |
-| `blackboard validate --level spoke` | Validate manifest + status against schema |
-
-### Hub-level commands (spoke aggregation)
+### Spoke-level commands (run from spoke repo)
 
 | Command | Description |
 |---------|-------------|
-| `blackboard pull --level hub` | Aggregate status from all registered spokes |
-| `blackboard registry --level hub` | List registered spokes and their health |
+| `hive-spoke init --hub <org/repo>` | Create `.collab/` with manifest, status, operator templates |
+| `hive-spoke status` | Generate status.yaml from current repo state (git + tests) |
+| `hive-spoke validate` | Validate all `.collab/` files against schemas, check signing, cross-reference consistency |
+| `hive-spoke publish` | Push `.collab/` to hub via PR (for private repos only) |
+
+### Hub-level commands (run from hub repo)
+
+| Command | Description |
+|---------|-------------|
+| `hive-spoke pull` | Fetch `.collab/` from each spoke's public repo via GitHub API, display aggregated dashboard |
+| `hive-spoke verify` | Cross-reference spoke signing keys against `.hive/allowed-signers` trust anchor |
+
+### Data Flow
+
+```
+PUBLIC SPOKES (default):
+  Spoke: init → status → validate → commit → push (to spoke repo)
+  Hub:   pull → fetches .collab/ from spoke repos via gh api → dashboard
+
+PRIVATE SPOKES (fallback):
+  Spoke: init → status → validate → publish → PR created on hub
+  Hub:   maintainer merges PR → .collab/ persisted in hub repo
+```
 
 ## Security Considerations
 
@@ -115,7 +129,7 @@ From [Steffen's security review](https://github.com/mellanon/pai-collab/issues/8
 
 ## Spoke Compliance Verification
 
-The hub cannot reach into a spoke repo to inspect its setup. Instead, compliance is verified through four layers at the projection boundary — when the spoke submits updates to the hub.
+Compliance is verified through four layers. For public spokes, the hub fetches `.collab/` and verifies on read. For private spokes that push via PR, compliance is verified at the projection boundary when the PR is submitted.
 
 ### The Four Verification Layers
 
@@ -152,7 +166,7 @@ The absence of a problem is evidence the local reflex is working. When local ref
 |--------|----------------|---------|
 | Secret found in PR | Reflex A (pre-commit gitleaks) is not running locally | Gate 2: Security |
 | Unsigned commit in PR | Commit signing is not configured | Gate 1: Identity |
-| Malformed `.collab/` files | `blackboard validate` is not being run before projection | Gate 3: Schema |
+| Malformed `.collab/` files | `hive-spoke validate` is not being run before projection | Gate 3: Schema |
 | Stale `status.yaml` (`generatedAt` older than threshold) | Spoke is not maintaining its status | Gate 4: Governance |
 
 **Strength:** Absence of evidence IS evidence of absence. If the hub catches what local reflexes should have blocked, the spoke is non-compliant.
@@ -178,25 +192,25 @@ Whether the spoke's `.collab/` directory exists and its files conform to the exp
 
 | Check | Verification | When |
 |-------|-------------|------|
-| `.collab/manifest.yaml` exists and is valid | Zod schema validation | `blackboard validate` (local) + Hub CI Gate 3 |
-| `.collab/status.yaml` exists and is valid | Zod schema validation | `blackboard validate` (local) + Hub CI Gate 3 |
-| `.collab/operator.yaml` Tier 1 is present | Zod schema validation | `blackboard validate` (local) + Hub CI Gate 3 |
-| Cross-references are consistent | manifest `hub` matches hive, `identity.publicKey` matches signing key | `blackboard validate` (local) |
+| `.collab/manifest.yaml` exists and is valid | Zod schema validation | `hive-spoke validate` (local) + Hub CI Gate 3 |
+| `.collab/status.yaml` exists and is valid | Zod schema validation | `hive-spoke validate` (local) + Hub CI Gate 3 |
+| `.collab/operator.yaml` Tier 1 is present | Zod schema validation | `hive-spoke validate` (local) + Hub CI Gate 3 |
+| Cross-references are consistent | manifest `hub` matches hive, `identity.publicKey` matches signing key | `hive-spoke validate` (local) |
 
 **Strength:** Binary. Either the structure is right or it isn't.
 
-### Local Pre-Flight: `blackboard validate --level spoke`
+### Local Pre-Flight: `hive-spoke validate --level spoke`
 
 Before projecting to the hub, the operator runs validation locally. This catches setup errors before the hub CI ever sees them:
 
 ```bash
-blackboard validate --level spoke
+hive-spoke validate --level spoke
 # ✓ .collab/manifest.yaml — valid schema, required fields present
 # ✓ .collab/status.yaml — valid schema, generatedAt is recent
 # ✓ .collab/operator.yaml — Tier 1 fields present, handle matches manifest
 # ✓ Signing configured — gpg.format=ssh, signing key exists
 # ✓ Cross-references — hub field matches known hive, publicKey matches git signing key
-# ✗ status.yaml generatedAt is 3 days old — run: blackboard status --level spoke
+# ✗ status.yaml generatedAt is 3 days old — run: hive-spoke status
 ```
 
 ### Compliance Summary
@@ -211,9 +225,13 @@ Spoke compliance = Provable evidence (Layer 1: signatures verify)
 
 The hub doesn't need to inspect the spoke. It verifies at the boundary, detects failures through negative signals, and accepts signed attestation for the rest.
 
+## Resolved Questions
+
+1. **How does a spoke register with a hub?** — The hub discovers spokes via `PROJECT.yaml` → `source.repo` fields. `hive-spoke init` scaffolds `.collab/` in the spoke repo. The hub's `pull` command fetches from all repos that have `.collab/`. No manual registration step needed beyond having a `PROJECT.yaml` with a `source.repo` field on the hub.
+2. **How frequently should status.yaml be regenerated?** — Operator-driven, not automated. The operator runs `hive-spoke status` when they've made meaningful progress, commits, and pushes. The hub pulls on demand. CI validates the spoke's `.collab/` on push but does not auto-publish.
+
 ## Open Questions
 
-1. How does a spoke register with a hub? (Currently manual REGISTRY.md entry)
-2. How frequently should status.yaml be regenerated? (CI on push? Scheduled?)
-3. Should status.yaml include local blackboard summary data? (Agent count, work item count)
-4. Multi-hub: can one spoke project to multiple hives simultaneously?
+1. Should status.yaml include local blackboard summary data? (Agent count, work item count)
+2. Multi-hub: can one spoke project to multiple hives simultaneously?
+3. How should the hub handle spoke repos that become inaccessible? (deleted, made private, renamed)
