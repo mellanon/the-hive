@@ -218,6 +218,29 @@ Signed commits are the cryptographic backbone of the trust protocol. Every opera
 | Layer 3 (fork-and-PR) | Review boundary | Review boundary + cryptographic authorship verification |
 | Layers 4-6 | Applied by trust zone | Applied by trust zone + signing status is an input to zone determination |
 
+## Observable Setup Signals
+
+Completing the onboarding ceremony produces observable, binary trust signals — not self-reported checkboxes. These signals are cryptographically verifiable or deterministically logged, and they feed into trust scoring as evidence for promotion decisions.
+
+### The Three Setup Signals
+
+| Signal | Evidence | How It's Verified |
+|--------|----------|-------------------|
+| **Signing verified** | First commit signed with operator's Ed25519 key | CI Gate 1 (Identity) checks `git log --show-signature` against `allowed-signers`. Passes = verified. |
+| **Secret scanning active** | Pre-commit hook blocked a test secret before CI | Operator's spoke manifest reports gitleaks status; or CI has never caught a secret from this operator (defense in depth worked at Layer 1, not Layer 2) |
+| **Content filter active** | Content loads have audit trail entries | Operator's local blackboard shows content-filter events in audit log |
+
+**Key properties:**
+- **Signing** is verifiable by anyone — the CI gate checks it automatically on every PR. An operator's first merged PR with a verified signature is cryptographic proof they completed the signing setup.
+- **Secret scanning** is observable through absence — if CI (Reflex B) never catches secrets from an operator, they're either writing clean code or their pre-commit hook (Reflex A) is catching it first. Both are positive signals.
+- **Content filter** is locally observable — the audit trail in the operator's local blackboard logs every content-filter decision. This is visible in the operator's spoke manifest but not directly verifiable by the hub (the operator self-reports, but the audit log IS the artifact).
+
+### What This Means for Trust
+
+Setup signals answer a specific question: **did this operator actually complete the onboarding SOP, or did they just read it?**
+
+A signed first PR is stronger evidence than a checked box on a PR template. It's the difference between "I confirm I set up signing" (trust me) and a verified signature in the git log (verify me). The trust protocol's first principle — "earned, not claimed" — applies to onboarding too.
+
 ## Content Provenance
 
 Every content artifact entering the hub carries a provenance label — tracking where it came from and how it was produced. This is a lightweight form of taint tracking (inspired by [Arbor](https://github.com/trust-arbor/arbor)'s four-level taint model) adapted for git-based workflows.
@@ -384,6 +407,9 @@ Every completed interaction generates a feedback event: **positive**, **neutral*
 | **Security violation** | Negative | Automated | Secret leak detected, content filter triggered on submitted code |
 | **Vouch successful** | Positive | System | Vouched operator earns 5+ positive ratings (voucher rewarded) |
 | **Vouch failed** | Negative | System | Vouched operator earns 3+ negative ratings (voucher penalized) |
+| **Setup: signing verified** | Positive | System | CI Gate 1 passes on operator's first PR (automatic) |
+| **Setup: secret scanning active** | Positive | System | Operator's spoke manifest reports gitleaks installed (self-attested, signed) |
+| **Setup: content filter active** | Positive | System | Operator's spoke manifest reports content-filter installed (self-attested, signed) |
 
 ### Scoring Formula
 
@@ -445,6 +471,26 @@ trust:
 ```
 
 **Promotion is still human-gated.** Thresholds are eligibility criteria, not automatic promotion. The maintainer reviews the profile and decides.
+
+### Setup Signal Acceleration
+
+Hives can optionally weight setup verification signals toward promotion thresholds:
+
+```yaml
+trust:
+  scoring:
+    setup_signals:
+      signing_verified:
+        weight: 0.5           # counts as 0.5 positive rating
+      secret_scanning_verified:
+        weight: 0.5
+      content_filter_verified:
+        weight: 0.5
+```
+
+An operator with verified setup (all three signals) earns 1.5 positive ratings automatically. Combined with 4 normal positive reviews, they'd meet a `min_positive: 5` threshold. Without setup signals, they'd need 5 organic reviews.
+
+**This is acceleration, not automation.** The maintainer still reviews and approves every promotion. Setup signals reduce the number of organic reviews needed — they don't bypass human judgment. The rationale: an operator who arrives with signing configured, secret scanning installed, and content filtering active has demonstrated more commitment than one who hasn't.
 
 ### Cross-Hive Portability
 
