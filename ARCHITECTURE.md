@@ -181,7 +181,8 @@ Operator A                           Operator B
 3. **Git-native.** The coordination protocol is fork-and-PR. No custom wire protocols.
 4. **Human-in-the-loop.** Agents do work. Humans review, approve, and govern.
 5. **Trust through work.** Reputation is earned from verified contributions, not claimed.
-6. **Open protocol.** The protocol is MIT. Implementations can vary.
+6. **Signed by default.** All commits signed with operator's Ed25519 SSH key. Unsigned = untrusted.
+7. **Open protocol.** The protocol is CC-BY-4.0. Implementations can vary.
 
 ## The Blackboard CLI
 
@@ -218,87 +219,124 @@ The blackboard model shares structural similarities with RabbitMQ's messaging ar
 
 Like RabbitMQ, each level can operate independently. A local blackboard doesn't need a hub. A hub doesn't need to federate. But the protocol supports composition when you need it.
 
-## Security Boundary
+## Security Architecture
 
-Security is not a layer — it's a cross-cutting concern that spans all three layers. The Hive inherits a defense-in-depth model from pai-collab's trust architecture.
+Security is not a layer — it's a cross-cutting concern that spans all three blackboard layers. The Hive uses a **unified reflex pipeline** where security operations fire automatically at boundary crossings between layers.
 
-### The Six Defense Layers
+### Commit Signing as Trust Foundation
+
+All commits in The Hive are signed with the operator's Ed25519 SSH key. Git's native SSH signing (2.34+) provides the cryptographic identity layer — no custom PKI, no certificate authorities. Three git config commands + an `allowed-signers` file = complete identity.
+
+The **allowed-signers file** (`.hive/allowed-signers`) is the trust anchor:
+- Version-controlled in git (tracks who added whom, when)
+- Maintainer-reviewed (adding an operator requires a reviewed PR)
+- Git-native verification: `git log --show-signature`
+- Revocation by removal (immediate for future commits)
+
+**Four signature states:**
+
+| State | Meaning | Action |
+|-------|---------|--------|
+| Signed + key in allowed-signers | Verified operator | Accept |
+| Signed + key NOT in allowed-signers | Unknown operator | Requires onboarding |
+| Unsigned commit | Untrusted | Reject at CI |
+| Revoked key | Former operator | Reject |
+
+### The Unified Reflex Pipeline
+
+Four reflexes fire at boundary crossings between the three blackboard layers. Each reflex is a security checkpoint that operates at a specific transition point:
 
 ```
-OUTBOUND DEFENSE (secrets leaving)
-──────────────────────────────────────────────────
-Layer 1: Pre-commit scanning          ← Operator's machine
-         Catches secrets before they enter git history.
-         Tool: gitleaks with custom PAI rules (11 AI provider patterns).
-         Blocks commits containing API keys, credentials, .env values.
+LOCAL BLACKBOARD                    SPOKE BLACKBOARD                    HUB BLACKBOARD
+(operator's machine)                (.collab/ contract)                 (shared repository)
 
-Layer 2: CI gate                      ← Repository level
-         Catches anything Layer 1 missed (bypassed hooks, new patterns).
-         Runs on every push and PR via GitHub Actions.
+   commit ──┤ Reflex A ├──→ push ──┤ Reflex B ├──→ merge
+             (outbound)              (outbound)
+             Pre-commit              CI Gate
 
-Layer 3: Fork and pull request        ← Structural boundary
-         Human review before merge. Git's native isolation model.
-
-INBOUND DEFENSE (threats entering)
-──────────────────────────────────────────────────
-Layer 4: Content trust boundary       ← Agent context loading
-         Scans inbound markdown for prompt injection before LLM context.
-         34 deterministic patterns (instruction overrides, PII, encoding evasion).
-         No LLM classification — auditable regex + schema validation.
-
-Layer 5: Tool restrictions            ← Agent sandbox
-         Untrusted content = restricted agent.
-         No Bash, no Write, no WebFetch. Read-only MCP access.
-         Quarantine sandbox for acquired external content.
-
-Layer 6: Audit trail                  ← Observability
-         Append-only JSONL log of every content loading decision.
-         Human override with recorded reasoning.
-         Enables detection of slow-burn manipulation patterns.
+   load ←──┤ Reflex D ├──── pull ←──┤ Reflex C ├──── clone/fetch
+             (inbound)               (inbound)
+             Context Filter          Sandbox Enforcer
 ```
 
-### How Security Maps to Layers
+| Reflex | Boundary | Direction | What It Does | Implementation |
+|--------|----------|-----------|-------------|----------------|
+| **A: Pre-commit** | Local → Spoke | Outbound | Secret scanning + signing enforcement | gitleaks pre-commit hook |
+| **B: CI Gate** | Spoke → Hub | Outbound | Signature verification + secret scanning + schema validation | GitHub Actions (4 ordered gates) |
+| **C: Acquisition** | Hub → Spoke | Inbound | Quarantines external content in sandbox before access | [pai-content-filter](https://github.com/jcfischer/pai-content-filter) SandboxEnforcer hook |
+| **D: Context Load** | Spoke → Local | Inbound | Scans content for prompt injection before LLM context | [pai-content-filter](https://github.com/jcfischer/pai-content-filter) ContentFilter hook |
 
-| Defense | Protects | Where it runs | Implementation |
-|---------|----------|---------------|----------------|
-| **Outbound** (Layers 1-2) | Prevents secrets leaking into shared repos | Local + Hub | [pai-secret-scanning](https://github.com/jcfischer/pai-secret-scanning) |
-| **Structural** (Layer 3) | Isolates contributions for review | Hub | Git fork-and-PR (built-in) |
-| **Inbound** (Layers 4-5) | Prevents prompt injection from compromising agents | Local + Hub | [pai-content-filter](https://github.com/jcfischer/pai-content-filter) |
-| **Observability** (Layer 6) | Detects and records security events | All layers | pai-content-filter audit trail + ivy-blackboard event log |
+**Per-operation reflex map — which reflexes fire for each git operation:**
 
-### Outbound: Secret Scanning
+| Operation | Reflexes | Why |
+|-----------|----------|-----|
+| `git commit` | A | Block secrets, enforce signing |
+| `git push` | B | Verify identity, scan again, validate schema |
+| `git clone` / `curl` | C | Quarantine to sandbox |
+| Read file from sandbox | D | Scan before agent loads content |
+| `gh pr create` | B | Full CI pipeline on PR |
+| Skill install | C → D | Acquire to sandbox, then scan before loading |
 
-**Problem:** Operators work with private infrastructure — API keys, voice credentials, personal paths. Contributing to a hive requires separating public code from private secrets. Without automated scanning, every contribution is a potential exposure event.
+### CI as State Machine
 
-**Solution:** [pai-secret-scanning](https://github.com/jcfischer/pai-secret-scanning) provides two automated gates:
-- **Pre-commit hook** — blocks commits containing secrets on the operator's machine
-- **CI gate** — scans PRs at the repository level before merge
+The hub enforces security through four ordered gates on every PR. This is **enforcement on the receiving end** (the hub), not the sending end (the contributor). Contributors need only git + SSH key — zero custom tooling.
 
-**Coverage:** 11 custom AI provider patterns (Anthropic, OpenAI, ElevenLabs, Telegram, Replicate, HuggingFace, Groq) + ~150 built-in gitleaks patterns (AWS, GCP, Azure, SSH keys, JWTs).
+```
+Gate 1: IDENTITY    → All commits signed? Key in allowed-signers?
+Gate 2: SECURITY    → Secret scanning passes? Content filter passes?
+Gate 3: SCHEMA      → PROJECT.yaml valid? JOURNAL.md present? REGISTRY aligned?
+Gate 4: GOVERNANCE  → Issue referenced? Journal updated? STATUS.md updated?
+```
 
-**Position in workflow:** Runs during the "Contrib Prep" phase — after code is built and hardened, before it's submitted for review.
+Gates 1-2 block on failure. Gates 3-4 warn. State is tracked entirely through git artifacts — no databases, no external services.
 
-### Inbound: Content Filtering
+### Observable Setup Signals
 
-**Problem:** When agents load content from shared repositories (the blackboard pattern), malicious instructions can be hidden in markdown — prompt injection attacks that cause the reviewing agent to execute unintended actions.
+Whether an operator has completed security onboarding is **binary and verifiable**, not self-reported:
 
-**Solution:** [pai-content-filter](https://github.com/jcfischer/pai-content-filter) provides four-layer defense:
-1. **Pattern matching** — 34 deterministic regex patterns detecting instruction overrides, PII, encoding evasion
-2. **Architectural isolation** — flagged content triggers tool-restricted agent mode (read-only, no shell, no network)
-3. **Audit trail** — every content loading decision logged with source, patterns matched, and reasoning
-4. **Sandbox enforcer** — PreToolUse hook intercepts acquisition commands (`git clone`, `curl`) and redirects to sandbox for scanning before agent access
+| Signal | Evidence | How Verified |
+|--------|----------|-------------|
+| Signing setup complete | First commit signed with operator's key | CI Gate 1 checks against `allowed-signers` |
+| Secret scanning active | Pre-commit hook catches secrets before CI | Observable through absence — if Layer 2 catches what Layer 1 should have, the signal is negative |
+| Content filter active | Audit entries in operator's local blackboard | Self-attested via signed spoke manifest |
 
-**Design choice:** Deterministic regex, not LLM classification. Auditable, reproducible, no recursive AI calls.
+These signals feed into trust scoring as automatic positive feedback. An operator with verified setup + positive review history may qualify for zone promotion sooner — but promotion is always explicit and human-approved.
 
-**Coverage:** Direct prompt injection, encoded payloads (base64, Unicode, hex), format marker exploits (Llama/Mistral delimiters), authority impersonation, incremental drift detection.
+### Verification Asymmetry
+
+Not all reflexes can be verified the same way. The hub's verification capability depends on whether evidence flows through git:
+
+| Reflex | Verification | Method |
+|--------|-------------|--------|
+| **A (signing)** | Cryptographic proof | CI Gate 1 checks signatures against `allowed-signers` |
+| **A (secret scanning)** | Negative signal | If CI catches secrets pre-commit should have blocked, Reflex A isn't running |
+| **B (CI gate)** | Self-evident | The CI pipeline IS Reflex B — it's running by definition |
+| **C (sandbox)** | Self-attested | Operator declares in signed `manifest.yaml` security section |
+| **D (content filter)** | Self-attested | Operator declares in signed `manifest.yaml` security section |
+
+**Design choice:** Self-attestation in a signed manifest is weaker than cryptographic proof, but stronger than a checkbox. The signature makes claims attributable — if an operator declares "content filter active" but a prompt injection incident occurs, the signed manifest is evidence of the gap. This trades verification strength for onboarding simplicity, consistent with "enforcement on the receiving end."
+
+### Implementation Detail
+
+**Outbound defense (Reflexes A + B):**
+- [pai-secret-scanning](https://github.com/jcfischer/pai-secret-scanning) provides the scanning engine
+- gitleaks with 11 custom AI provider patterns (Anthropic, OpenAI, ElevenLabs, etc.) + ~150 built-in patterns
+- Pre-commit hook (Reflex A) blocks locally; CI gate (Reflex B) catches anything that slips through
+
+**Inbound defense (Reflexes C + D):**
+- [pai-content-filter](https://github.com/jcfischer/pai-content-filter) provides both hooks
+- **SandboxEnforcer** (Reflex C): PreToolUse hook intercepts `git clone`, `curl`, `wget` and redirects to sandbox directory
+- **ContentFilter** (Reflex D): PreToolUse hook scans Read/Glob/Grep targeting sandbox. 34 deterministic regex patterns, no LLM classification. Decisions: ALLOWED, HUMAN_REVIEW, BLOCKED
+- Fail-closed design: any hook error → block (exit code 2)
 
 ### Security as Prerequisite
 
 These aren't optional add-ons. They're prerequisites for collaboration:
-- **Operators must install secret scanning** before their first contribution
-- **Content filtering activates automatically** when agents load shared content
+- **Operators must enable signing and install secret scanning** before their first contribution
+- **Content filtering fires automatically** when agents load shared content
 - **All trust zone transitions** (untrusted → trusted → maintainer) pass through these gates
 - **Maintainers are not exempt** — scanning applies to all contributors regardless of trust zone
+- **Earned, not claimed** — a signed first PR is stronger evidence than a checked checkbox
 
 ## Ecosystem Map
 
@@ -318,12 +356,14 @@ These aren't optional add-ons. They're prerequisites for collaboration:
 |----------|-----------|-------|-------|
 | Local coordination | Yes (ivy-blackboard) | Yes | Shipped. SQLite-based agent coordination. |
 | Autonomous dispatch | Yes (ivy-heartbeat) | Yes | Shipped. launchd-scheduled checks + dispatch. |
-| Spoke contract | Yes (Issue #80) | No | Schema designed, security reviewed. Implementation pending. |
+| Spoke contract | Yes (spoke-protocol.md) | No | Schema designed, identity section specified. Implementation pending. |
 | Hub coordination | Partially (pai-collab SOPs) | Yes | Working but not formalized as a protocol. |
 | Swarm formation | No | No | Core protocol gap. |
-| Outbound security | Yes (pai-secret-scanning) | Yes | Shipped. Pre-commit + CI gate. 11 custom AI patterns. |
-| Inbound security | Yes (pai-content-filter) | Yes | Shipped. 34 patterns + sandbox + audit trail. 389 tests. |
-| Trust scoring | Partially (trust zones) | Partially | Binary zones exist. Quantitative scores do not. |
+| Outbound security | Yes (pai-secret-scanning) | Yes | Shipped. Reflex A (pre-commit) + Reflex B (CI gate). 11 custom AI patterns. |
+| Inbound security | Yes (pai-content-filter) | Yes | Shipped. Reflex C (sandbox enforcer) + Reflex D (content filter). 492 tests. |
+| Commit signing | Yes (operator-identity.md) | Yes | Ed25519 SSH signing, allowed-signers trust anchor, CI Gate 1 verification. |
+| CI enforcement | Yes (hive-protocol.md) | Partially | Gate 1 (Identity) operational on pai-collab. Gates 2-4 specified. |
+| Trust scoring | Yes (trust-protocol.md) | Partially | Binary zones exist. Quantitative scoring + observable setup signals specified. |
+| Operator identity | Yes (operator-identity.md) | Partially | SSH signing identity operational. Portable profiles and three-tier schema specified. |
 | Work discovery | No | No | Work items are local. No cross-hive discovery. |
 | Skill distribution | No | No | Skills exist locally. No network distribution. |
-| Operator identity | No | No | GitHub identity only. No verified profiles. |

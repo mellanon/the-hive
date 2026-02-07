@@ -27,17 +27,25 @@ name: <project-name>
 hub: <org/repo>
 project: <project-id>
 maintainer: <github-handle>
-license: MIT | Apache-2.0 | BSD-2-Clause | BSD-3-Clause
+license: MIT | Apache-2.0 | BSD-2-Clause | BSD-3-Clause | CC-BY-4.0
 identity:
   handle: <canonical-handle>
   publicKey: "ssh-ed25519 AAAA..."       # Ed25519 SSH public key
   fingerprint: "SHA256:+sgg04W..."       # key fingerprint
+security:
+  reflexes:
+    signing: true                        # Reflex A: commit signing enabled
+    secretScanning: true                 # Reflex A: gitleaks pre-commit hook installed
+    sandboxEnforcer: true                # Reflex C: acquisition sandbox active
+    contentFilter: true                  # Reflex D: content filter hook active
 status:
   test: <test command>
   healthCheck: <health check command>
 ```
 
 > The `identity` section binds the spoke to a cryptographic key. When the hub receives a spoke update, it can verify the commit signature matches the declared public key. This prevents spoke spoofing — only the holder of the private key can produce valid spoke updates. See [Operator Identity](operator-identity.md) for the full identity model.
+
+> The `security.reflexes` section declares which security reflexes the operator has active. Since the manifest is signed, false claims are attributable. The hub can validate signing (cryptographic proof via CI Gate 1) and treat other claims as self-attested trust signals. See [Trust Protocol — Observable Setup Signals](trust-protocol.md) for how these feed into trust scoring.
 
 ### status.yaml (auto-generated)
 
