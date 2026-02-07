@@ -28,10 +28,13 @@ The protocol separates **identity verification** (proving who you are) from **id
 
 | Provider Type | Protocol | Examples | Hive Type |
 |--------------|----------|----------|-----------|
+| **Git SSH Signing** | Ed25519 SSH key + git commit signing | Any git platform (GitHub, GitLab, Codeberg) | **All hive types (recommended default)** |
 | **Git-based** | SSH key / token auth | GitHub, GitLab, Codeberg | Open / community hives |
 | **Social OAuth** | OAuth 2.0 / OIDC | Google, Facebook, Apple, X | Public hives, broad adoption |
 | **Enterprise SSO** | SAML 2.0 / OIDC | Okta, Azure AD, Google Workspace, Auth0 | Closed / enterprise hives |
 | **Cryptographic** | PGP / DID | PGP keyservers, DID methods | High-assurance, self-sovereign |
+
+> **Recommended default:** Git SSH Signing provides cryptographic identity verification using operators' existing SSH keys. It requires no new infrastructure, no key server, and no custom tooling. Git 2.34+ supports SSH commit signing natively. All other providers are complementary — SSH signing is the foundation.
 
 ### How It Works
 
@@ -89,12 +92,62 @@ This lets each hive set its own bar:
 2. Operator joins a hive
 3. Hive checks: does the operator have an identity matching our requirements?
 4. Provider-specific verification:
+   - Git SSH Signing: signed commit verifiable against hive's allowed-signers file
    - GitHub: can push to spoke repo (proof of account control)
    - Social OAuth: OAuth token exchange (standard OIDC flow)
    - Enterprise SSO: SAML assertion from corporate IdP
    - PGP: signed operator.yaml with published public key
 5. Hive records verification: provider, timestamp, evidence
 ```
+
+### Git SSH Signing (Recommended Default)
+
+Operators already have Ed25519 SSH keys for git authentication. Git 2.34+ supports using these same keys for **commit signing** — cryptographic proof of authorship on every commit. This is the recommended default identity mechanism because it requires zero new infrastructure.
+
+**Setup (one-time, 3 commands):**
+
+```bash
+# Enable SSH signing format
+git config --global gpg.format ssh
+
+# Point to your existing SSH key
+git config --global user.signingKey ~/.ssh/id_ed25519.pub
+
+# Sign all commits automatically
+git config --global commit.gpgSign true
+```
+
+Or use the CLI shorthand:
+
+```bash
+blackboard identity init
+# Checks for ~/.ssh/id_ed25519.pub (generates if missing)
+# Runs the 3 git config commands above
+# Prints fingerprint for spoke manifest
+```
+
+**How verification works:**
+
+1. Every commit the operator makes is signed with their Ed25519 private key
+2. The operator's public key is published in their spoke `manifest.yaml`
+3. The hive maintains an `allowed-signers` file mapping operators to public keys (see [Hive Protocol](hive-protocol.md))
+4. Anyone can verify any commit: `git log --show-signature`
+5. CI can enforce signed commits on PRs
+
+**The signed commit IS the proof.** No separate verification ceremony, no token exchange, no key server. The act of pushing a signed commit to a spoke or hive proves the operator controls the private key.
+
+**Key lifecycle:**
+
+| Event | Action |
+|-------|--------|
+| **New operator** | Generate Ed25519 key (`ssh-keygen -t ed25519`) or use existing. Run `blackboard identity init`. |
+| **Join a hive** | Submit PR with spoke manifest containing public key. The signed commit proves key ownership. Maintainer adds to `allowed-signers`. |
+| **Key rotation** | Generate new key. Submit PR updating spoke manifest + allowed-signers. Old commits remain verifiable in git history. |
+| **Key loss** | Same as rotation. New key, new PR, maintainer reviews. |
+| **Multiple devices** | Multiple keys allowed in `allowed-signers` (one per line, same email). Or use ssh-agent forwarding. |
+| **Revocation** | Maintainer removes operator from `allowed-signers`. Future commits from that key won't verify. |
+
+**Platform independence:** SSH signing works on any git platform (GitHub, GitLab, Codeberg, self-hosted). If the platform is compromised, the cryptographic signatures remain valid — verification only needs the `allowed-signers` file, not the platform.
 
 ## Operator Profile Schema
 
@@ -106,6 +159,9 @@ The operator profile is a YAML file (`operator.yaml`) that lives in the operator
 schemaVersion: "1.0"
 handle: <canonical-handle>              # network-wide identifier
 name: <display-name>                    # optional
+signing:                                # cryptographic identity (recommended)
+  publicKey: "ssh-ed25519 AAAA..."      # Ed25519 SSH public key
+  fingerprint: "SHA256:+sgg04W..."      # key fingerprint for quick reference
 identities:
   - provider: github                    # git-based
     id: <github-handle>
@@ -126,6 +182,8 @@ skills:                                 # operator's capabilities
   - content-filtering
 availability: open | busy | offline
 ```
+
+> The `signing` field is the cryptographic anchor of operator identity. It binds the operator's handle to a verifiable Ed25519 key. Platform identities (GitHub, Google, etc.) are complementary — they prove platform account ownership. The signing key proves commit authorship independently of any platform.
 
 ### Tier 2: Hive-Scoped (visible within joined hives)
 
@@ -210,12 +268,13 @@ governance:
 **Decision:** Pluggable identity provider model. The protocol defines the abstraction; hives choose which providers they accept.
 
 **Mechanism:**
+- **Git SSH Signing (recommended default):** Ed25519 commit signing using existing SSH keys. Cryptographic proof of authorship on every commit. Platform-independent. See "Git SSH Signing" section above.
 - **Git-based (GitHub, GitLab):** Proof of account control via push to spoke repo. Default for community hives.
 - **Social OAuth (Google, Facebook, Apple):** Standard OIDC token exchange. Lowers barrier for public hives.
 - **Enterprise SSO (Okta, Azure AD, Google Workspace):** SAML/OIDC assertion from corporate IdP. Required for enterprise hives.
 - **Cryptographic (PGP, DID):** Self-sovereign identity. Operator signs their profile. For high-assurance contexts.
 
-**Rationale:** No single identity provider fits all hive types. An open community hive should accept Google sign-in. An enterprise hive must require corporate SSO. The protocol abstracts the provider so hives choose their identity requirements.
+**Rationale:** No single identity provider fits all hive types. However, Git SSH Signing is the recommended default because it provides cryptographic identity verification using infrastructure operators already have (SSH keys), with zero additional tooling. An open community hive should accept Google sign-in. An enterprise hive must require corporate SSO. The protocol abstracts the provider so hives choose their identity requirements, but signing is the cryptographic foundation.
 
 ### 2. How is the operator profile portable across hives?
 
@@ -254,6 +313,8 @@ governance:
 
 ## Prior Art
 
+- [Arbor](https://github.com/trust-arbor/arbor) — Ed25519 cryptographic identity per agent, signed request envelopes, identity registry. The Hive adapts this pattern at the operator level using git's native SSH signing instead of custom key management. See [Arbor Security Story](https://azmaveth.com/posts/arbor-security-story/).
+- Git SSH signing (git 2.34+) — Native commit signing using SSH keys. `gpg.format=ssh` + `user.signingKey` + `commit.gpgSign`. The infrastructure already exists.
 - pai-collab REGISTRY.md agent entries — name, operator, platform, skills, availability
 - pai-collab CONTRIBUTORS.yaml — trust zone assignments per operator
 - PAI `settings.json` — local identity configuration (name, voice, preferences)

@@ -11,8 +11,9 @@ The spoke protocol defines how an operator projects their local state to a hub w
 
 1. **Projection, not exposure** — The spoke publishes a curated view. The hub never reaches into local state.
 2. **Two files** — manifest (human-maintained identity) + status (auto-generated snapshot). Minimal surface area.
-3. **Generic** — The protocol works with any hub, not just pai-collab. A spoke can project to multiple hives.
-4. **Lightweight** — YAML files in `.collab/` at the repo root. No infrastructure required.
+3. **Signed by default** — All spoke updates are commit-signed with the operator's Ed25519 SSH key. The spoke is self-authenticating.
+4. **Generic** — The protocol works with any hub, not just pai-collab. A spoke can project to multiple hives.
+5. **Lightweight** — YAML files in `.collab/` at the repo root. No infrastructure required.
 
 ## Contract
 
@@ -27,10 +28,16 @@ hub: <org/repo>
 project: <project-id>
 maintainer: <github-handle>
 license: MIT | Apache-2.0 | BSD-2-Clause | BSD-3-Clause
+identity:
+  handle: <canonical-handle>
+  publicKey: "ssh-ed25519 AAAA..."       # Ed25519 SSH public key
+  fingerprint: "SHA256:+sgg04W..."       # key fingerprint
 status:
   test: <test command>
   healthCheck: <health check command>
 ```
+
+> The `identity` section binds the spoke to a cryptographic key. When the hub receives a spoke update, it can verify the commit signature matches the declared public key. This prevents spoke spoofing — only the holder of the private key can produce valid spoke updates. See [Operator Identity](operator-identity.md) for the full identity model.
 
 ### status.yaml (auto-generated)
 
@@ -72,6 +79,23 @@ git:
 | `blackboard registry --level hub` | List registered spokes and their health |
 
 ## Security Considerations
+
+### Commit Signing (Required)
+
+All spoke updates (commits to `.collab/`) **must** be signed with the operator's Ed25519 SSH key. This provides:
+
+- **Authorship verification** — the hub can verify spoke updates came from the declared operator
+- **Tamper detection** — unsigned or incorrectly signed commits are rejected at the hub
+- **Non-repudiation** — the operator cannot deny authorship of a signed spoke update
+
+Hub CI should enforce signed commits on spoke-related PRs:
+```bash
+# Verify commit signature against hive's allowed-signers
+git config gpg.ssh.allowedSignersFile .hive/allowed-signers
+git log --show-signature --format='%H %G?' origin/main..HEAD | grep -v ' G$' && echo "UNSIGNED COMMITS FOUND" && exit 1
+```
+
+### Additional Considerations
 
 From [Steffen's security review](https://github.com/mellanon/pai-collab/issues/80):
 

@@ -68,6 +68,12 @@ trust:
     - untrusted
     - trusted
     - maintainer
+  signing:
+    required: true                        # require signed commits (recommended)
+    allowed_signers: .hive/allowed-signers # path to trust anchor file
+    key_types:                            # accepted key types
+      - ssh-ed25519                       # recommended
+      - ssh-rsa                           # accepted (legacy)
 federation:
   registry: <org/repo>    # where this hive is listed (optional)
   peers: []               # other hives this one recognizes (optional)
@@ -94,10 +100,87 @@ Everything else — REGISTRY.md, TRUST-MODEL.md, SOPs, project directories — i
 **To create a hive:**
 ```bash
 blackboard init --level hub
-# Creates: hive.yaml, REGISTRY.md (empty), .github/ scaffolding
+# Creates: hive.yaml, .hive/allowed-signers, REGISTRY.md (empty), .github/ scaffolding
 ```
 
 This follows the local-first principle: the simplest hive is a repo. Complexity is added only when needed.
+
+## Cryptographic Trust Anchor: allowed-signers
+
+Every hive maintains a `.hive/allowed-signers` file that maps operators to their Ed25519 public keys. This is the **trust anchor** for the hive — the source of truth for "who is who."
+
+```
+# .hive/allowed-signers
+# Format: <email> <key-type> <public-key>
+# Maintained by hive maintainers. Changes require PR review.
+andreas@example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO6xYoY3NSCNkCSiS4GU+EhZ...
+jcfischer@example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIx...
+```
+
+**Properties:**
+- **Version-controlled** — changes to allowed-signers are tracked in git history (who added whom, when)
+- **Maintainer-reviewed** — adding a new operator requires a reviewed PR (the PR itself proves key ownership via signed commit)
+- **Git-native verification** — anyone can verify any commit against this file: `git config gpg.ssh.allowedSignersFile .hive/allowed-signers && git log --show-signature`
+- **Revocation by removal** — removing a line revokes that operator's signing authority. Future commits from that key won't verify.
+
+**Maintenance rules:**
+1. Only maintainers can merge changes to `.hive/allowed-signers`
+2. Adding a new operator: operator submits signed PR with their public key. The signed commit IS the proof of key ownership.
+3. Removing an operator: maintainer removes the entry. Revocation is immediate for future verification.
+4. Key rotation: operator submits signed PR (signed with OLD key) adding new key. Maintainer reviews and merges. Then a second PR (signed with NEW key) removes the old key.
+5. CI should enforce: all commits in PRs are signed by a key listed in `.hive/allowed-signers`
+
+## Enforcement Model: CI as State Machine
+
+Hive security and onboarding are enforced through CI pipelines on the hub repository — not through contributor-side tooling. This means:
+
+- **Contributors bring:** git (2.34+) and an SSH key — nothing else
+- **The hive enforces:** signing verification, secret scanning, schema validation, governance checks
+
+### How It Works
+
+The hub CI pipeline runs ordered gates on every pull request:
+
+```
+PR submitted
+    │
+    ├─ Gate 1: IDENTITY
+    │   ├─ All commits signed? (warn if not)
+    │   └─ Signing key in allowed-signers? (notice if new contributor)
+    │
+    ├─ Gate 2: SECURITY
+    │   ├─ Secret scanning passes? (error — blocks merge)
+    │   └─ Content filter passes? (error — blocks merge)
+    │
+    ├─ Gate 3: SCHEMA
+    │   ├─ PROJECT.yaml valid? (error — blocks merge)
+    │   ├─ JOURNAL.md present? (error — blocks merge)
+    │   └─ REGISTRY/STATUS aligned? (error — blocks merge)
+    │
+    └─ Gate 4: GOVERNANCE
+        ├─ Issue referenced? (warning)
+        ├─ Journal updated? (warning)
+        └─ STATUS.md updated? (warning if PROJECT.yaml changed)
+```
+
+### Why CI, Not Custom Tooling
+
+The enforcement lives on the **receiving end** (the hive), not the sending end (the contributor). This is critical for low-friction onboarding — a new operator can fork, write, sign commits, and PR without installing anything beyond git.
+
+The pattern is: **SOPs describe the process. CI enforces the checkable parts. Humans review the rest.** Not every step can be machine-verified (e.g., "read the trust model"), but the enforceable steps (signing, scanning, schemas) are gated automatically.
+
+### State Tracking
+
+Operator state is tracked through git artifacts, not a custom database:
+
+| State | Tracked In | How It Changes |
+|-------|-----------|----------------|
+| Registered | `.hive/allowed-signers` | Maintainer merges PR adding key |
+| Trust zone | `CONTRIBUTORS.yaml` | Maintainer updates entry |
+| Contributions | git log + JOURNAL.md | Each merged PR |
+| Active projects | PROJECT.yaml contributors | Maintainer updates |
+
+This is inspired by [Arbor](https://github.com/trust-arbor/arbor)'s principle that SOPs should be state machines rather than best-effort documentation. The adaptation for git-based protocols: the CI pipeline is the state machine runtime, and git artifacts are the state storage.
 
 ## Design Decisions
 

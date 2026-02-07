@@ -61,6 +61,202 @@ Prevents prompt injection from compromising agents reading shared content.
 
 **Design choice:** Deterministic regex over LLM classification. Auditable, reproducible, no latency from recursive AI calls.
 
+## The Reflex Pipeline
+
+The six defense layers are not independent tools — they form a **unified reflex pipeline** that fires at every boundary crossing between hive layers. The term "reflex" comes from [Arbor](https://github.com/trust-arbor/arbor)'s security architecture: fast, pattern-based checks that fire automatically before any authorization or processing occurs.
+
+### Reflex Firing Points
+
+Reflexes fire at **boundary crossings** — every time content moves from one layer to another:
+
+```
+OUTBOUND (operator → network)
+═══════════════════════════════════════════════════════════════════
+
+  LOCAL                        SPOKE                         HUB
+  ┌──────────────┐            ┌──────────────┐            ┌──────────────┐
+  │ Agent writes │            │ .collab/     │            │ PR arrives   │
+  │ code         │──commit──▶ │ manifest     │──push/PR──▶│              │
+  │              │    │       │ status       │    │       │              │
+  └──────────────┘    │       └──────────────┘    │       └──────────────┘
+                      ▼                           ▼
+               ┌─────────────┐             ┌─────────────┐
+               │ REFLEX A    │             │ REFLEX B    │
+               │ Pre-commit  │             │ CI gate     │
+               │             │             │             │
+               │ L1: Secret  │             │ L2: Secret  │
+               │   scanning  │             │   scanning  │
+               │ Commit      │             │ Signing     │
+               │   signing   │             │   verify    │
+               │ enforced    │             │ Schema      │
+               └─────────────┘             │   checks    │
+                                           └─────────────┘
+
+
+INBOUND (network → operator)
+═══════════════════════════════════════════════════════════════════
+
+  HUB                          SPOKE                        LOCAL
+  ┌──────────────┐            ┌──────────────┐            ┌──────────────┐
+  │ Shared       │            │ Cloned       │            │ Agent loads  │
+  │ content      │──clone/──▶ │ content      │──context──▶│ content into │
+  │ (repos,PRs,  │  pull │    │ (repos,      │  load │    │ LLM context  │
+  │  skills)     │       │    │  skills)     │       │    │              │
+  └──────────────┘       │    └──────────────┘       │    └──────────────┘
+                         ▼                           ▼
+                  ┌─────────────┐             ┌─────────────┐
+                  │ REFLEX C    │             │ REFLEX D    │
+                  │ Acquisition │             │ Context     │
+                  │             │             │ load        │
+                  │ Sandbox     │             │             │
+                  │   enforcer  │             │ L4: Content │
+                  │ Quarantine  │             │   scanning  │
+                  │   clone dir │             │ L5: Tool    │
+                  └─────────────┘             │   restrict  │
+                                              │ L6: Audit   │
+                                              │   log       │
+                                              └─────────────┘
+```
+
+### The Four Reflexes
+
+| Reflex | Boundary | Direction | What Fires | Enforcement |
+|--------|----------|-----------|------------|-------------|
+| **A: Pre-commit** | Local → Spoke | Outbound | Secret scanning, commit signing | Git pre-commit hook (local) |
+| **B: CI Gate** | Spoke → Hub | Outbound | Secret scanning, signing verification, schema validation | GitHub Actions (hub CI) |
+| **C: Acquisition** | Hub → Spoke | Inbound | Sandbox enforcer, quarantine directory | PreToolUse hook on `git clone`, `curl` |
+| **D: Context Load** | Spoke → Local | Inbound | Content filter, tool restrictions, audit trail | LoadContext hook, PreToolUse hook |
+
+### How Each Reflex Is Enforced (Non-Optional)
+
+The critical question: how do reflexes fire without the operator choosing to enable them?
+
+**Reflex A (Pre-commit):** Installed locally by the operator. This is the ONE step that requires operator action — `pai-secret-scanning install` adds the git pre-commit hook. If the operator skips this, **Reflex B catches it** at the hub. Defense in depth.
+
+**Reflex B (CI Gate):** Runs in the hub's GitHub Actions pipeline. The operator does NOT install this — it's part of the hive's infrastructure. Every PR triggers it. No opt-out. This is the enforcement backstop for Reflex A.
+
+**Reflex C (Acquisition):** Enforced via the agent's hook system (PreToolUse). When an agent runs `git clone` or `curl` on external content, the sandbox enforcer intercepts the command and redirects to a quarantine directory for scanning. The operator installs pai-content-filter once; it hooks into the agent's tool pipeline automatically.
+
+**Reflex D (Context Load):** Enforced via the agent's hook system (LoadContext/PreToolUse). When an agent loads markdown from a shared repository into LLM context, content filtering scans it first. Flagged content triggers tool restrictions (read-only mode). This fires automatically on every context load — no per-file opt-in.
+
+### Enforcement Summary by Layer
+
+| Layer | What Operator Installs | What Fires Automatically |
+|-------|----------------------|-------------------------|
+| **Local** | pai-secret-scanning (pre-commit hook), pai-content-filter (agent hooks) | Reflex A on every commit, Reflex D on every context load |
+| **Spoke** | Nothing — spoke is just YAML files | Reflexes A and D fire during spoke generation (commit + read) |
+| **Hub** | Nothing — CI is hive infrastructure | Reflex B on every PR, Reflex C on every acquisition |
+
+**Key principle:** The operator installs two things locally (secret scanning + content filter). Everything else fires automatically at the hub via CI. If an operator contributes without installing local tools, the hub's CI catches outbound issues (Reflex B) and the receiving agent's hooks catch inbound issues (Reflex D).
+
+### Per-Operation Reflex Map
+
+Every operation in the hive triggers specific reflexes:
+
+| Operation | Reflexes That Fire | What Gets Checked |
+|-----------|-------------------|-------------------|
+| `git commit` (local) | A | Secrets in staged changes, commit is signed |
+| `git push` to spoke | — | No new reflex (Reflex A already fired at commit) |
+| Submit PR to hub | B | Secrets (re-scan), signing verification, schemas, issue references |
+| Merge PR | — | Human review (Layer 3) — maintainer decision |
+| `git clone` external repo | C | Sandbox enforcer quarantines, content scanned before access |
+| Agent loads markdown from PR | D | Content filter scans, flagged → tool restrictions, audit logged |
+| `blackboard skills install` | C + D | Quarantine clone (C), scan skill content before loading (D) |
+| Agent reads JOURNAL.md from PR | D | Content filter scans entry before LLM context |
+| `blackboard pull --level hub` | D | Spoke status data scanned before processing |
+
+### Reflex Configuration
+
+Hives can configure reflex behavior in `hive.yaml`:
+
+```yaml
+trust:
+  reflexes:
+    outbound:
+      secret_scanning: required          # pre-commit + CI
+      patterns: default + custom         # gitleaks config location
+    inbound:
+      content_filter: required           # content scanning on context load
+      quarantine_external: true          # sandbox enforcer for git clone/curl
+      tool_restrictions_on_flag: true    # read-only mode when content flagged
+    audit:
+      log_all_loads: true               # log every content loading decision
+      log_format: jsonl                  # append-only JSONL
+      retention_days: 90                # rotation policy
+```
+
+### Prior Art
+
+The reflex pipeline concept is adapted from [Arbor](https://github.com/trust-arbor/arbor)'s reflex system, which implements fast pattern-based checks (regex, path matching) that fire before capability authorization. Arbor's reflexes are in-process (Elixir GenServer); The Hive's reflexes are at git boundaries (hooks and CI). Same principle, different enforcement mechanism:
+
+| Arbor Reflex | Hive Reflex | Parallel |
+|-------------|-------------|----------|
+| `rm_rf_root` pattern block | Secret scanning catches `rm -rf /` in scripts | Dangerous command detection |
+| `ssh_private_keys` path block | Secret scanning catches `~/.ssh/id_*` content | Credential leak prevention |
+| `ssrf_metadata` pattern block | Content filter catches cloud metadata URLs | SSRF prevention |
+| Custom reflex registration | Custom gitleaks patterns + content filter rules | Extensible pattern matching |
+
+## Commit Signing as Trust Foundation
+
+Signed commits are the cryptographic backbone of the trust protocol. Every operator's Ed25519 SSH key (see [Operator Identity](operator-identity.md)) signs their commits, creating a verifiable chain of authorship.
+
+**Trust signals from signing:**
+
+| Signal | What It Means |
+|--------|--------------|
+| Commit signed, key in allowed-signers | Known operator, verified authorship |
+| Commit signed, key NOT in allowed-signers | Unknown operator — requires onboarding |
+| Commit unsigned | No cryptographic identity — treated as untrusted regardless of GitHub account |
+| Commit signed with revoked key | Operator's signing authority was revoked — reject |
+
+**Signing enhances every defense layer:**
+
+| Layer | Without Signing | With Signing |
+|-------|----------------|--------------|
+| Layer 1 (pre-commit) | Scans for secrets | Scans for secrets + ensures commit will be signed |
+| Layer 2 (CI gate) | Scans for secrets | Scans for secrets + rejects unsigned commits |
+| Layer 3 (fork-and-PR) | Review boundary | Review boundary + cryptographic authorship verification |
+| Layers 4-6 | Applied by trust zone | Applied by trust zone + signing status is an input to zone determination |
+
+## Content Provenance
+
+Every content artifact entering the hub carries a provenance label — tracking where it came from and how it was produced. This is a lightweight form of taint tracking (inspired by [Arbor](https://github.com/trust-arbor/arbor)'s four-level taint model) adapted for git-based workflows.
+
+### Provenance Labels
+
+| Label | Meaning | Trust Implication |
+|-------|---------|-------------------|
+| `origin: operator` | Directly authored by a known operator | Highest trust — human judgment applied |
+| `origin: agent` | Generated by the operator's AI agent(s) | Operator attests to quality, but content is machine-generated |
+| `origin: external` | Imported from outside the hive | Lower trust — source may not follow hive standards |
+| `origin: mixed` | Combination of operator and agent authorship | Common case — operator guides, agent produces |
+
+### How Provenance is Tracked
+
+Provenance is declared via **git commit trailers** (structured metadata at the end of commit messages):
+
+```
+Add spoke validation schema
+
+Implements manifest.yaml and status.yaml validation against
+the spoke protocol schema definitions.
+
+Origin: agent
+Attested-By: mellanon
+Signed-off-by: Andreas <andreas@example.com>
+```
+
+**Rules:**
+- `Origin` trailer is recommended on all commits to hive repositories
+- `Attested-By` is required when `Origin: agent` — the operator takes responsibility
+- Provenance does not change trust zone — it informs review decisions
+- Reviewers can use provenance to calibrate scrutiny (agent-generated code may need closer review)
+- Provenance is append-only in git history — it cannot be retroactively changed
+
+### Why This Matters
+
+When reviewing a PR, knowing whether content was human-authored vs. LLM-generated vs. imported matters for trust decisions. A security-critical change authored by an operator carries different weight than one generated by an agent. Provenance makes this visible without adding friction — it's a commit trailer, not a ceremony.
+
 ## Dimension 2: Trust Zones (Built)
 
 The existing three-zone model from pai-collab:
@@ -516,6 +712,7 @@ The same 90-day rotation and PII scrubbing from PAI Signal applies.
 
 | Source | What it provides |
 |--------|-----------------|
+| [Arbor](https://github.com/trust-arbor/arbor) | Ed25519 identity, capability-based access, four-level taint tracking, reflex system. The Hive adapts: crypto identity (via git SSH signing), content provenance (taint tracking lite), unified reflex pipeline. See [security story](https://azmaveth.com/posts/arbor-security-story/). |
 | [pai-collab TRUST-MODEL.md](https://github.com/mellanon/pai-collab) | Three zones, six defense layers, two-level scoping |
 | [pai-secret-scanning](https://github.com/jcfischer/pai-secret-scanning) | Outbound security (Layers 1-2). 11 custom + ~150 built-in patterns. |
 | [pai-content-filter](https://github.com/jcfischer/pai-content-filter) | Inbound security (Layers 4-5-6). 34 patterns, sandbox, audit trail. 389 tests. |
